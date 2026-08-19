@@ -7,4 +7,6 @@ SPA Vite 7 + React 19 + React Router 7 + Tailwind 4 + shadcn + MapLibre.
 - Brain: `src/features/brain/` + `src/domain/sebinBrain*.ts`
 - Shell: `src/layouts/AppShell.tsx`, `src/components/AppSidebar.tsx`
 
-Pendiente: Supabase, Traccar, ZIO draw.
+Traccar: proxy Vite `/api` → `:8082`, `usePosicionesTraccar` + capa GeoJSON `src/map/capaUnidades.ts`.
+
+Pendiente: Supabase, ZIO draw.

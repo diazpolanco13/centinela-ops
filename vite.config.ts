@@ -13,6 +13,10 @@ export default defineConfig({
   server: {
     port: Number(process.env.PORT) || 5181,
     strictPort: true,
+    proxy: {
+      "/api/socket": { target: "ws://127.0.0.1:8082", ws: true },
+      "/api": "http://127.0.0.1:8082",
+    },
   },
   optimizeDeps: {
     include: ["maplibre-gl", "react", "react-dom", "react-router-dom", "d3-force"],
@@ -58,6 +62,7 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         navigateFallback: "index.html",
+        navigateFallbackDenylist: [/^\/api/],
         runtimeCaching: [
           {
             urlPattern:

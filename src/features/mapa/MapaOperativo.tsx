@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
-import { Globe, Home, LocateFixed } from "lucide-react";
+import { Globe, Home, LocateFixed, Radio, X } from "lucide-react";
 import { CARACAS_CENTRO } from "@/data/geo";
-import { UNIDADES_MOCK } from "@/data/unidadesMock";
+import { UNIDADES_MOCK, type UnidadEnMapa } from "@/data/unidadesMock";
+import { usePosicionesTraccar } from "@/data/usePosicionesTraccar";
+import { engancharClicUnidades, montarCapaUnidades, setDataUnidades } from "@/map/capaUnidades";
+import { prepararIconosUnidad } from "@/map/iconosUnidad";
 import {
   cargarBaseMapa,
   cargarModo3d,
@@ -50,22 +53,18 @@ import {
 import { AvisoFallbackBaseMapa, type InfoFallbackBaseMapa } from "@/features/mapa/AvisoFallbackBaseMapa";
 import { SelectoresVistaMapa } from "@/features/mapa/SelectoresVistaMapa";
 import { LogoMini } from "@/components/LogoMini";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-const COLOR_ESTADO: Record<string, string> = {
-  en_zona: "#22c55e",
-  en_ruta: "#38bdf8",
-  detenida: "#f59e0b",
-};
-
 export function MapaOperativo() {
   const contenedorRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const listoRef = useRef(false);
-  const marcadores = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const unidadesRef = useRef<UnidadEnMapa[]>(UNIDADES_MOCK);
+  const selectedIdRef = useRef<string | null>(null);
   const introEnCursoRef = useRef(false);
   const hacerIntroRef = useRef(false);
   const modoEstiloRef = useRef<"dark-matter" | "raster">("dark-matter");
@@ -82,6 +81,22 @@ export function MapaOperativo() {
   const [reglaEscala, setReglaEscala] = useState<ReglaEscala | undefined>();
   const [fallback, setFallback] = useState<InfoFallbackBaseMapa | null>(null);
   const [gpsActivo, setGpsActivo] = useState(false);
+  const [ocultarAvisoTraccar, setOcultarAvisoTraccar] = useState(false);
+
+  const { error: errorTraccar } = usePosicionesTraccar((unidades) => {
+    unidadesRef.current = unidades;
+    const map = mapRef.current;
+    if (!map || !listoRef.current) return;
+    setDataUnidades(map, unidades, selectedIdRef.current);
+  });
+
+  useEffect(() => {
+    void prepararIconosUnidad();
+  }, []);
+
+  useEffect(() => {
+    setOcultarAvisoTraccar(false);
+  }, [errorTraccar]);
 
   baseEfectivaRef.current = fallback?.usada ?? baseMapa;
   modo3dRef.current = modo3d;
@@ -122,6 +137,10 @@ export function MapaOperativo() {
     map.setProjection({ type: tipoObjetivo });
   }
 
+  function aplicarCapaUnidades(map: maplibregl.Map) {
+    void montarCapaUnidades(map, unidadesRef.current, selectedIdRef.current);
+  }
+
   function sincronizarPitch3d(map: maplibregl.Map, con3d: boolean) {
     if (introEnCursoRef.current) return;
     if (con3d) {
@@ -144,6 +163,7 @@ export function MapaOperativo() {
         aplicarEdificios3d(map, con3d);
         sincronizarPitch3d(map, con3d);
         aplicarProyeccionGlobo(map, modoGloboRef.current);
+        aplicarCapaUnidades(map);
         return;
       }
       const gen = ++generacionEstiloRef.current;
@@ -154,6 +174,7 @@ export function MapaOperativo() {
         aplicarEdificios3d(mapRef.current, modo3dRef.current);
         sincronizarPitch3d(mapRef.current, modo3dRef.current);
         aplicarProyeccionGlobo(mapRef.current, modoGloboRef.current);
+        aplicarCapaUnidades(mapRef.current);
       });
       return;
     }
@@ -170,6 +191,7 @@ export function MapaOperativo() {
           mapRef.current.easeTo({ pitch: 0, bearing: 0, duration: 600 });
         }
         aplicarProyeccionGlobo(mapRef.current, modoGloboRef.current);
+        aplicarCapaUnidades(mapRef.current);
       });
       return;
     }
@@ -222,21 +244,6 @@ export function MapaOperativo() {
     };
   }
 
-  function pintarMarcadores(map: maplibregl.Map) {
-    for (const mk of marcadores.current.values()) mk.remove();
-    marcadores.current.clear();
-    for (const u of UNIDADES_MOCK) {
-      const el = document.createElement("div");
-      el.className = "flex flex-col items-center";
-      el.innerHTML = `<span style="width:14px;height:14px;border-radius:999px;background:${COLOR_ESTADO[u.estado]};box-shadow:0 0 0 3px rgba(0,0,0,.35),0 0 10px ${COLOR_ESTADO[u.estado]}"></span>
-        <span style="margin-top:4px;font:600 10px ui-sans-serif,system-ui;color:#ecfdf5;text-shadow:0 1px 3px #000">${u.nombre}</span>`;
-      const mk = new maplibregl.Marker({ element: el, anchor: "bottom" })
-        .setLngLat(u.lngLat)
-        .addTo(map);
-      marcadores.current.set(u.id, mk);
-    }
-  }
-
   useEffect(() => {
     if (!contenedorRef.current || mapRef.current) return;
     const hacerIntro = reservarIntroMapa();
@@ -266,6 +273,7 @@ export function MapaOperativo() {
     map.on("resize", actualizarEscalaVista);
 
     let cancelarIntro: (() => void) | null = null;
+    let quitarClicUnidades: (() => void) | null = null;
     let timeoutCarto = 0;
     let cancelado = false;
 
@@ -292,7 +300,14 @@ export function MapaOperativo() {
       listoRef.current = true;
       window.clearTimeout(timeoutCarto);
       map.resize();
-      pintarMarcadores(map);
+      aplicarCapaUnidades(map);
+      quitarClicUnidades = engancharClicUnidades(map, {
+        getUnidades: () => unidadesRef.current,
+        getSelectedId: () => selectedIdRef.current,
+        setSelectedId: (id) => {
+          selectedIdRef.current = id;
+        },
+      });
       aplicarBase();
       actualizarEscalaVista();
       if (hacerIntro) {
@@ -321,11 +336,10 @@ export function MapaOperativo() {
     return () => {
       cancelado = true;
       cancelarIntro?.();
+      quitarClicUnidades?.();
       window.clearTimeout(timeoutCarto);
       window.clearTimeout(persistirTimer.current);
       ro.disconnect();
-      for (const mk of marcadores.current.values()) mk.remove();
-      marcadores.current.clear();
       map.remove();
       mapRef.current = null;
       listoRef.current = false;
@@ -390,6 +404,34 @@ export function MapaOperativo() {
           onReintentar={() => setFallback(null)}
           onCerrar={() => setFallback(null)}
         />
+      )}
+      {errorTraccar && !ocultarAvisoTraccar && (
+        <div
+          className="pointer-events-none absolute inset-x-0 top-2 z-40 flex justify-center px-2 sm:top-3 sm:px-4"
+          role="status"
+        >
+          <Alert
+            variant="destructive"
+            className="pointer-events-auto w-full max-w-lg border-amber-500/60 bg-background/95 shadow-lg backdrop-blur-sm supports-[backdrop-filter]:bg-background/90"
+          >
+            <Radio className="text-amber-600 dark:text-amber-400" />
+            <AlertTitle className="pr-8 text-foreground">Traccar no conectado</AlertTitle>
+            <AlertDescription className="text-muted-foreground">
+              <p>{errorTraccar}</p>
+            </AlertDescription>
+            <AlertAction>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => setOcultarAvisoTraccar(true)}
+                aria-label="Cerrar aviso"
+              >
+                <X />
+              </Button>
+            </AlertAction>
+          </Alert>
+        </div>
       )}
       <SelectoresVistaMapa
         baseMapa={baseEfectivaRef.current}

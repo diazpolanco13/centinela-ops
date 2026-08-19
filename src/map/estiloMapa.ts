@@ -365,7 +365,12 @@ export function construirEstilo(baseActiva: BaseMapa = "hibrido"): StyleSpecific
     },
   );
 
-  return { version: 8, sources, layers };
+  return {
+    version: 8,
+    sources,
+    layers,
+    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+  };
 }
 
 /** Conjunto de claves válidas según las bases disponibles en este build. */
