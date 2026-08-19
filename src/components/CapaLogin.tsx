@@ -1,0 +1,128 @@
+/**
+ * Capa fija del login con salida cinematográfica (mismo gesto que el splash:
+ * opacity + scale + blur). El mapa monta DEBAJO mientras esta capa se disuelve
+ * → no hay corte seco login → shell.
+ *
+ * Tras autenticar: igual que reload — espera órbita del mapa, lanza fly y
+ * disuelve el login 180 ms después para revelar el zoom en movimiento.
+ */
+
+import { useEffect, useRef, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import { Login } from "@/features/auth/Login";
+import type { Sesion } from "@/data/authStub";
+import {
+  ADELANTO_FLY_ANTES_FADE_MS,
+  TIMEOUT_ESPERA_ORBITA_MS,
+  avisarInicioSalidaOverlay,
+  onMapaOrbitaLista,
+  resetearEstadoIntroMapa,
+} from "@/lib/introMapa";
+
+const VOID = "#05100C";
+const SALIDA_MS = 900;
+const EXIT = { opacity: 0, scale: 1.06, filter: "blur(6px)" };
+const IDLE = { opacity: 1, scale: 1, filter: "blur(0px)" };
+const EASE = [0.4, 0, 0.2, 1] as const;
+
+interface Props {
+  /** false mientras el splash de arranque aún bloquea el árbol. */
+  listo: boolean;
+  sesion: Sesion | null;
+}
+
+export function CapaLogin({ listo, sesion }: Props) {
+  const reduced = useReducedMotion();
+  /** Mantener capa montada tras emitir sesión hasta terminar el fade. */
+  const puente = useRef(false);
+  /** Evita reentrar y que el cleanup por `setSaliendo` mate los timers del fade. */
+  const salidaIniciadaRef = useRef(false);
+  const [saliendo, setSaliendo] = useState(false);
+  const [, forzar] = useState(0);
+
+  if (listo && !sesion) {
+    puente.current = true;
+  }
+
+  const visible = listo && (!sesion || puente.current);
+
+  // Pantalla de login: estado limpio para que el próximo auth tenga intro fresca
+  // (también tras logout, donde introYaLanzada quedaba true del reload anterior).
+  useEffect(() => {
+    if (!listo || sesion) return;
+    resetearEstadoIntroMapa();
+    salidaIniciadaRef.current = false;
+    setSaliendo(false);
+  }, [listo, sesion]);
+
+  useEffect(() => {
+    if (!listo || !sesion || !puente.current) return;
+    if (salidaIniciadaRef.current) return;
+
+    let timeoutAdelanto = 0;
+    let timeoutSalida = 0;
+    let timeoutOrbita = 0;
+    let cancelado = false;
+
+    const empezarSalida = () => {
+      if (cancelado || salidaIniciadaRef.current || !puente.current) return;
+      salidaIniciadaRef.current = true;
+      window.clearTimeout(timeoutOrbita);
+
+      // Mismo protocolo que el splash con sesión: fly primero, fade después.
+      avisarInicioSalidaOverlay();
+
+      const arrancarFade = () => {
+        if (cancelado) return;
+        setSaliendo(true);
+        const ms = reduced ? 0 : SALIDA_MS;
+        timeoutSalida = window.setTimeout(() => {
+          puente.current = false;
+          setSaliendo(false);
+          forzar((n) => n + 1);
+        }, ms);
+      };
+
+      if (reduced) {
+        arrancarFade();
+      } else {
+        timeoutAdelanto = window.setTimeout(arrancarFade, ADELANTO_FLY_ANTES_FADE_MS);
+      }
+    };
+
+    // Esperar órbita (mapa montó debajo). Timeout si el rol no cae al mapa.
+    const unsubOrbita = onMapaOrbitaLista(empezarSalida);
+    timeoutOrbita = window.setTimeout(empezarSalida, TIMEOUT_ESPERA_ORBITA_MS);
+
+    return () => {
+      // Si la salida ya empezó, no cancelar timers (setSaliendo no debe abortar).
+      if (salidaIniciadaRef.current) return;
+      cancelado = true;
+      unsubOrbita();
+      window.clearTimeout(timeoutOrbita);
+      window.clearTimeout(timeoutAdelanto);
+      window.clearTimeout(timeoutSalida);
+    };
+  }, [listo, sesion, reduced]);
+
+  if (!visible) return null;
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[9998] overflow-y-auto"
+      style={{
+        background: VOID,
+        willChange: "opacity, transform, filter",
+        pointerEvents: saliendo ? "none" : undefined,
+      }}
+      initial={false}
+      animate={saliendo && !reduced ? EXIT : IDLE}
+      transition={
+        reduced ? { duration: 0 } : { duration: SALIDA_MS / 1000, ease: EASE }
+      }
+      aria-hidden={saliendo || undefined}
+    >
+      <Login />
+    </motion.div>
+  );
+}

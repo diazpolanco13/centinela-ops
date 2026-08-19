@@ -1,0 +1,39 @@
+---
+description: Usa el grafo de código (code-review-graph MCP) ANTES de grep/lectura de archivos
+alwaysApply: true
+---
+
+# Grafo de código primero (code-review-graph)
+
+MCP `code-review-graph` (SQLite local `.code-review-graph/`). Consulta
+~300–2.500 tokens; leer código a ciegas >150.000. Detalle ops: `GRAPH_REPORT.md`.
+
+## Regla
+
+**ANTES** de grep/glob/lectura exploratoria: tools MCP del grafo. Fallback a
+grep/Read solo si el grafo no cubre (p. ej. contenido literal ya localizado).
+
+## Mapa tools
+
+| Quieres… | Usa |
+|----------|-----|
+| Símbolo / tema | `semantic_search_nodes_tool` |
+| callers / callees / imports / tests | `query_graph_tool` |
+| Blast radius | `get_impact_radius_tool` |
+| Riesgo cambios | `detect_changes_tool` → `get_review_context_tool` |
+| Arquitectura | `get_architecture_overview_tool`, `list_communities_tool` |
+| Flujos afectados | `get_affected_flows_tool` |
+| Rename / dead code | `refactor_tool` |
+| Contexto mínimo | `get_minimal_context_tool` |
+
+## Chat nuevo
+
+1. `list_graph_stats_tool` (o `GRAPH_REPORT.md`).
+2. Trabajo en curso → `detect_changes_tool`.
+3. Grafo viejo → `build_or_update_graph_tool`.
+4. Cierre: `detect_changes_tool`; mencionar funciones sin test antes de proponer commit.
+5. No “arreglar” `.git/hooks/pre-commit` (no-op; update = post-commit).
+
+Negocio / schema / RLS: leer `README.md` bajo demanda (no está always-on).
+Gotcha `SECURITY DEFINER` + `CREATE OR REPLACE`: ahí mismo.
+Caveman / UI: ver `caveman.mdc` y `ui-controles-visibles.mdc` — no repetir aquí.
