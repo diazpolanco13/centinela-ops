@@ -27,6 +27,8 @@ Abre `http://localhost:5181`. Login **stub**: cualquier usuario y contraseña.
 
 Opcional: `VITE_MAPTILER_KEY` para satélite HD.
 
+Concepto y fases: [docs/sistema-monitoreo-patrullajes-inteligencia.md](docs/sistema-monitoreo-patrullajes-inteligencia.md).
+
 ## Skills Cursor
 
 `.agents/skills/`: `/caveman`, `/cinematic-brain-graph`, `frontend-orchestrator`, `cavecrew`, `supabase`.
