@@ -283,9 +283,15 @@ export function MapaOperativo() {
       }
     });
 
+    const ro = new ResizeObserver(() => {
+      map.resize();
+    });
+    ro.observe(map.getContainer());
+
     map.on("load", () => {
       listoRef.current = true;
       window.clearTimeout(timeoutCarto);
+      map.resize();
       pintarMarcadores(map);
       aplicarBase();
       actualizarEscalaVista();
@@ -296,6 +302,7 @@ export function MapaOperativo() {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             if (!mapRef.current) return;
+            map.resize();
             cancelarIntro = programarIntroFly(map);
           });
         });
@@ -316,6 +323,7 @@ export function MapaOperativo() {
       cancelarIntro?.();
       window.clearTimeout(timeoutCarto);
       window.clearTimeout(persistirTimer.current);
+      ro.disconnect();
       for (const mk of marcadores.current.values()) mk.remove();
       marcadores.current.clear();
       map.remove();
@@ -374,8 +382,8 @@ export function MapaOperativo() {
   }
 
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden bg-[#0c0f12]">
-      <div ref={contenedorRef} className="absolute inset-0" />
+    <div className="relative h-full min-h-0 w-full bg-[#0c0f12]">
+      <div ref={contenedorRef} className="h-full w-full" />
       {fallback && (
         <AvisoFallbackBaseMapa
           info={fallback}
