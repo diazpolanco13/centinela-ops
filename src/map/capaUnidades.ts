@@ -8,7 +8,7 @@ import type {
 import { etiquetaCorta } from "@/data/traccar";
 import { COLOR_ESTADO, type UnidadEnMapa } from "@/data/unidadesMock";
 import { leerPrefsUnidades } from "@/data/preferenciasUnidades";
-import { montarCapaUnidades3d, setDataUnidades3d } from "@/map/capaUnidades3d";
+import { montarCapaUnidades3d, setDataUnidades3d, ID_CAPA_UNIDADES_3D } from "@/map/capaUnidades3d";
 
 export { COLOR_ESTADO };
 
@@ -72,17 +72,18 @@ function syncLayoutUnidades(map: MapLibreMap): void {
   if (map.getLayer(ID_CAPA_UNIDADES_LABEL)) {
     map.setLayoutProperty(ID_CAPA_UNIDADES_LABEL, "visibility", visLabels);
     map.setLayoutProperty(ID_CAPA_UNIDADES_LABEL, "text-size", TAM_LABEL);
-    map.setPaintProperty(ID_CAPA_UNIDADES_LABEL, "text-color", "#5eead4");
-    map.setPaintProperty(ID_CAPA_UNIDADES_LABEL, "text-opacity", 0.72);
-    map.setPaintProperty(ID_CAPA_UNIDADES_LABEL, "text-halo-color", "#041410");
-    map.setPaintProperty(ID_CAPA_UNIDADES_LABEL, "text-halo-width", 1.1);
+    map.setPaintProperty(ID_CAPA_UNIDADES_LABEL, "text-color", "#f0fdfa");
+    map.setPaintProperty(ID_CAPA_UNIDADES_LABEL, "text-opacity", 0.92);
+    map.setPaintProperty(ID_CAPA_UNIDADES_LABEL, "text-halo-color", "#020617");
+    map.setPaintProperty(ID_CAPA_UNIDADES_LABEL, "text-halo-width", 1.6);
     map.setLayerZoomRange(ID_CAPA_UNIDADES_LABEL, 14, 24);
   }
   if (map.getLayer(ID_CAPA_UNIDADES_LABEL_SEL)) {
     map.setLayoutProperty(ID_CAPA_UNIDADES_LABEL_SEL, "visibility", visLabels);
     map.setLayoutProperty(ID_CAPA_UNIDADES_LABEL_SEL, "text-offset", [0, 1.65]);
     map.setPaintProperty(ID_CAPA_UNIDADES_LABEL_SEL, "text-color", "#f0fdfa");
-    map.setPaintProperty(ID_CAPA_UNIDADES_LABEL_SEL, "text-halo-width", 1.4);
+    map.setPaintProperty(ID_CAPA_UNIDADES_LABEL_SEL, "text-halo-color", "#020617");
+    map.setPaintProperty(ID_CAPA_UNIDADES_LABEL_SEL, "text-halo-width", 1.8);
   }
 }
 
@@ -134,52 +135,56 @@ export function asegurarCapaUnidades(map: MapLibreMap): boolean {
     });
   }
 
-  if (!map.getLayer(ID_CAPA_UNIDADES_LABEL)) {
-    map.addLayer({
-      id: ID_CAPA_UNIDADES_LABEL,
-      type: "symbol",
-      source: ID_FUENTE_UNIDADES,
-      minzoom: 14,
-      filter: ["==", ["get", "seleccionada"], 0],
-      layout: {
-        "text-field": ["get", "etiqueta"],
-        "text-size": TAM_LABEL,
-        "text-font": ["Open Sans Regular"],
-        "text-offset": [0, 0.95],
-        "text-anchor": "top",
-        "text-allow-overlap": false,
-        "text-optional": true,
-      },
-      paint: {
-        "text-color": "#5eead4",
-        "text-opacity": 0.72,
-        "text-halo-color": "#041410",
-        "text-halo-width": 1.1,
-      },
-    });
-  }
+  try {
+    if (!map.getLayer(ID_CAPA_UNIDADES_LABEL)) {
+      map.addLayer({
+        id: ID_CAPA_UNIDADES_LABEL,
+        type: "symbol",
+        source: ID_FUENTE_UNIDADES,
+        minzoom: 14,
+        filter: ["==", ["get", "seleccionada"], 0],
+        layout: {
+          "text-field": ["get", "etiqueta"],
+          "text-size": TAM_LABEL,
+          "text-font": ["Open Sans Regular"],
+          "text-offset": [0, 0.95],
+          "text-anchor": "top",
+          "text-allow-overlap": false,
+          "text-optional": true,
+        },
+        paint: {
+          "text-color": "#f0fdfa",
+          "text-opacity": 0.92,
+          "text-halo-color": "#020617",
+          "text-halo-width": 1.6,
+        },
+      });
+    }
 
-  if (!map.getLayer(ID_CAPA_UNIDADES_LABEL_SEL)) {
-    map.addLayer({
-      id: ID_CAPA_UNIDADES_LABEL_SEL,
-      type: "symbol",
-      source: ID_FUENTE_UNIDADES,
-      filter: ["==", ["get", "seleccionada"], 1],
-      layout: {
-        "text-field": ["get", "nombre"],
-        "text-size": 11,
-        "text-font": ["Open Sans Regular"],
-        "text-offset": [0, 1.65],
-        "text-anchor": "top",
-        "text-allow-overlap": true,
-        "text-max-width": 14,
-      },
-      paint: {
-        "text-color": "#f0fdfa",
-        "text-halo-color": "#041410",
-        "text-halo-width": 1.4,
-      },
-    });
+    if (!map.getLayer(ID_CAPA_UNIDADES_LABEL_SEL)) {
+      map.addLayer({
+        id: ID_CAPA_UNIDADES_LABEL_SEL,
+        type: "symbol",
+        source: ID_FUENTE_UNIDADES,
+        filter: ["==", ["get", "seleccionada"], 1],
+        layout: {
+          "text-field": ["get", "nombre"],
+          "text-size": 11,
+          "text-font": ["Open Sans Regular"],
+          "text-offset": [0, 1.65],
+          "text-anchor": "top",
+          "text-allow-overlap": true,
+          "text-max-width": 14,
+        },
+        paint: {
+          "text-color": "#f0fdfa",
+          "text-halo-color": "#020617",
+          "text-halo-width": 1.8,
+        },
+      });
+    }
+  } catch (err) {
+    console.warn("labels unidades no se pudieron montar", err);
   }
 
   syncLayoutUnidades(map);
@@ -191,10 +196,12 @@ export function setDataUnidades(
   unidades: UnidadEnMapa[],
   selectedId: string | null,
 ): void {
-  if (!asegurarCapaUnidades(map)) {
-    void montarCapaUnidades(map, unidades, selectedId);
+  if (!map.getStyle()) return;
+  if (!map.getLayer(ID_CAPA_UNIDADES_3D) || !map.getSource(ID_FUENTE_UNIDADES)) {
+    montarCapaUnidades(map, unidades, selectedId);
     return;
   }
+  asegurarCapaUnidades(map);
   const source = map.getSource(ID_FUENTE_UNIDADES) as GeoJSONSource | undefined;
   source?.setData(geojsonUnidades(unidades, selectedId));
   setDataUnidades3d(map, unidades, selectedId);
@@ -206,10 +213,31 @@ export function montarCapaUnidades(
   selectedId: string | null,
 ): void {
   if (!map.getStyle()) return;
-  if (!asegurarCapaUnidades(map)) return;
+  // Hit + source primero; mesh 3D siempre (aunque labels fallen).
+  if (!map.getSource(ID_FUENTE_UNIDADES)) {
+    map.addSource(ID_FUENTE_UNIDADES, { type: "geojson", data: VACIO });
+  }
+  if (!map.getLayer(ID_CAPA_UNIDADES_HIT)) {
+    map.addLayer({
+      id: ID_CAPA_UNIDADES_HIT,
+      type: "circle",
+      source: ID_FUENTE_UNIDADES,
+      paint: {
+        "circle-radius": 18,
+        "circle-opacity": 0,
+        "circle-stroke-width": 0,
+      },
+    });
+  }
   const source = map.getSource(ID_FUENTE_UNIDADES) as GeoJSONSource | undefined;
   source?.setData(geojsonUnidades(unidades, selectedId));
   montarCapaUnidades3d(map, unidades, selectedId);
+  asegurarCapaUnidades(map);
+  // Labels pueden quedar encima del mesh: reordenar.
+  if (map.getLayer(ID_CAPA_UNIDADES_3D) && map.getLayer(ID_CAPA_UNIDADES_LABEL)) {
+    map.moveLayer(ID_CAPA_UNIDADES_3D, ID_CAPA_UNIDADES_LABEL);
+  }
+  map.triggerRepaint();
 }
 
 export function engancharClicUnidades(

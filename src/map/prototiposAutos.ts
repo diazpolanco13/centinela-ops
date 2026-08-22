@@ -252,8 +252,11 @@ function aplicarColorCarroceria(mat: Material, hex: string): void {
   if (mat instanceof MeshStandardMaterial) {
     mat.color.set(hex);
     mat.map = null;
-    mat.metalness = Math.min(mat.metalness, 0.2);
-    mat.roughness = Math.max(mat.roughness, 0.45);
+    mat.metalness = Math.min(mat.metalness, 0.15);
+    mat.roughness = Math.max(mat.roughness, 0.55);
+    // Emissive suave: se lee sobre satélite claro (no solo dark matter).
+    mat.emissive.set(hex);
+    mat.emissiveIntensity = 0.35;
     mat.envMap = null;
     mat.needsUpdate = true;
     return;

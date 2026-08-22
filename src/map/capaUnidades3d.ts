@@ -55,16 +55,9 @@ const _origen = new Matrix4();
 const _scale = new Vector3();
 const _rotZ = new Matrix4();
 
-function idPrimerSymbolConTexto(map: MapLibreMap): string | undefined {
-  const layers = map.getStyle()?.layers ?? [];
-  for (const layer of layers) {
-    const layout = layer.layout as Record<string, unknown> | undefined;
-    if (layer.type === "symbol" && layout && "text-field" in layout) {
-      return layer.id;
-    }
-  }
-  return undefined;
-}
+/** IDs de labels en capaUnidades (evitar import circular). */
+const ID_LABEL = "unidades-label";
+const ID_LABEL_SEL = "unidades-label-sel";
 
 class CapaUnidades3d implements CustomLayerInterface {
   id = ID_CAPA_UNIDADES_3D;
@@ -84,11 +77,11 @@ class CapaUnidades3d implements CustomLayerInterface {
     this.map = map;
     this.camera = new Camera();
     this.scene = new Scene();
-    this.scene.add(new AmbientLight(0xffffff, 1.1));
-    const sol = new DirectionalLight(0xffffff, 1.15);
+    this.scene.add(new AmbientLight(0xffffff, 1.35));
+    const sol = new DirectionalLight(0xffffff, 1.25);
     sol.position.set(0.4, 1, 0.6).normalize();
     this.scene.add(sol);
-    const fill = new DirectionalLight(0xffffff, 0.55);
+    const fill = new DirectionalLight(0xffffff, 0.7);
     fill.position.set(-0.5, 0.2, -0.4).normalize();
     this.scene.add(fill);
 
@@ -111,7 +104,10 @@ class CapaUnidades3d implements CustomLayerInterface {
   }
 
   onRemove(): void {
+    if (this.map) capas.delete(this.map);
     this.soltarInstancias();
+    this.prototipos = undefined;
+    this.pendientes = null;
     this.scene = undefined;
     this.camera = undefined;
     this.map = undefined;
@@ -256,22 +252,37 @@ export function setDataUnidades3d(
   capas.get(map)?.setUnidades(unidades, selectedId);
 }
 
+/**
+ * Tras `setStyle` (MAP↔SAT) MapLibre llama onRemove: la instancia queda muerta.
+ * Siempre new CapaUnidades3d al re-añadir.
+ */
 export function montarCapaUnidades3d(
   map: MapLibreMap,
   unidades: UnidadEnMapa[],
   selectedId: string | null,
 ): void {
   if (!map.getStyle()) return;
-  const beforeId = idPrimerSymbolConTexto(map);
+
   let capa = capas.get(map);
-  if (!capa || !map.getLayer(ID_CAPA_UNIDADES_3D)) {
-    capa ??= new CapaUnidades3d();
+  if (!map.getLayer(ID_CAPA_UNIDADES_3D)) {
+    capa = new CapaUnidades3d();
     capas.set(map, capa);
-    if (!map.getLayer(ID_CAPA_UNIDADES_3D)) {
-      map.addLayer(capa, beforeId);
-    }
-  } else if (beforeId) {
-    map.moveLayer(ID_CAPA_UNIDADES_3D, beforeId);
+    // Encima de rasters; debajo de labels si ya existen.
+    const under = map.getLayer(ID_LABEL)
+      ? ID_LABEL
+      : map.getLayer(ID_LABEL_SEL)
+        ? ID_LABEL_SEL
+        : undefined;
+    map.addLayer(capa, under);
+  } else if (capa) {
+    const under = map.getLayer(ID_LABEL)
+      ? ID_LABEL
+      : map.getLayer(ID_LABEL_SEL)
+        ? ID_LABEL_SEL
+        : undefined;
+    if (under) map.moveLayer(ID_CAPA_UNIDADES_3D, under);
   }
-  capa.setUnidades(unidades, selectedId);
+
+  capa?.setUnidades(unidades, selectedId);
+  map.triggerRepaint();
 }
