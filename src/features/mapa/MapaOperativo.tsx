@@ -265,6 +265,7 @@ export function MapaOperativo() {
       maxZoom: 19,
       minZoom: hacerIntro || modoGloboRef.current ? 0 : 3,
       attributionControl: false,
+      canvasContextAttributes: { antialias: true },
     });
     mapRef.current = map;
     map.on("moveend", programarPersistirVista);

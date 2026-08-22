@@ -14,6 +14,7 @@ import {
   prepararIconosUnidad,
   reemplazarIconosUnidad,
 } from "@/map/iconosUnidad";
+import { montarCapaUnidades3d, setDataUnidades3d } from "@/map/capaUnidades3d";
 
 export { COLOR_ESTADO };
 
@@ -139,6 +140,7 @@ function syncLayoutUnidades(map: MapLibreMap): void {
     map.setLayoutProperty(ID_CAPA_UNIDADES_APPLE, "icon-rotation-alignment", "map");
     map.setLayoutProperty(ID_CAPA_UNIDADES_APPLE, "icon-pitch-alignment", "map");
     map.setLayoutProperty(ID_CAPA_UNIDADES_APPLE, "icon-anchor", "center");
+    map.setPaintProperty(ID_CAPA_UNIDADES_APPLE, "icon-opacity", 1);
   }
   if (map.getLayer(ID_CAPA_UNIDADES_LABEL)) {
     map.setLayoutProperty(ID_CAPA_UNIDADES_LABEL, "text-size", TAM_LABEL);
@@ -207,6 +209,9 @@ export function asegurarCapaUnidades(map: MapLibreMap): boolean {
         "icon-allow-overlap": true,
         "icon-ignore-placement": true,
       },
+      paint: {
+        "icon-opacity": 1,
+      },
     });
   }
 
@@ -273,6 +278,7 @@ export function setDataUnidades(
   }
   const source = map.getSource(ID_FUENTE_UNIDADES) as GeoJSONSource | undefined;
   source?.setData(geojsonUnidades(unidades, selectedId));
+  setDataUnidades3d(map, unidades, selectedId);
 }
 
 export async function montarCapaUnidades(
@@ -286,6 +292,7 @@ export async function montarCapaUnidades(
   if (!asegurarCapaUnidades(map)) return;
   const source = map.getSource(ID_FUENTE_UNIDADES) as GeoJSONSource | undefined;
   source?.setData(geojsonUnidades(unidades, selectedId));
+  montarCapaUnidades3d(map, unidades, selectedId);
 }
 
 export function engancharClicUnidades(

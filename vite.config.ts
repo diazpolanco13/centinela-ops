@@ -19,7 +19,15 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ["maplibre-gl", "react", "react-dom", "react-router-dom", "d3-force"],
+    include: [
+      "maplibre-gl",
+      "react",
+      "react-dom",
+      "react-router-dom",
+      "d3-force",
+      "three",
+      "three/addons/loaders/GLTFLoader.js",
+    ],
   },
   plugins: [
     react(),

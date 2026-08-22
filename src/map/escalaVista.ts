@@ -1,5 +1,13 @@
 import { ZOOM_INICIO_FADE_EDIFICIOS_3D, ZOOM_FIN_FADE_EDIFICIOS_3D } from "./estiloMapa";
 
+/** Metros/px en zoom 0, ecuador. Web Mercator. */
+const METROS_PX_Z0 = 156543.03392;
+
+export function metrosPorPixelMercator(zoom: number, latitud: number): number {
+  const cosLat = Math.max(0.05, Math.cos((latitud * Math.PI) / 180));
+  return (METROS_PX_Z0 * cosLat) / 2 ** zoom;
+}
+
 /**
  * Zoom mercator aproximado para un ancho de viewport en metros a una latitud.
  * Sirve para aterrizar la intro cerca de la etiqueta de escala ("30k", etc.).
@@ -12,8 +20,7 @@ export function zoomParaAnchoMetros(
   const w = Math.max(1, anchoViewportPx);
   const metros = Math.max(100, anchoMetros);
   const cosLat = Math.max(0.05, Math.cos((latitud * Math.PI) / 180));
-  // metros/px en z=0 ≈ 156543.03392 * cos(lat)
-  const zoom = Math.log2((156543.03392 * cosLat * w) / metros);
+  const zoom = Math.log2((METROS_PX_Z0 * cosLat * w) / metros);
   return Math.min(19, Math.max(0, zoom));
 }
 
@@ -37,8 +44,7 @@ const PASOS_REGLA_ESCALA_KM = [
  * metros/px de Web Mercator, igual que `zoomParaAnchoMetros`.
  */
 export function calcularReglaEscala(zoom: number, latitud: number): ReglaEscala {
-  const cosLat = Math.max(0.05, Math.cos((latitud * Math.PI) / 180));
-  const metrosPorPx = (156543.03392 * cosLat) / 2 ** zoom;
+  const metrosPorPx = metrosPorPixelMercator(zoom, latitud);
   const anchoMaximoPx = 100;
   const kmMaximo = (metrosPorPx * anchoMaximoPx) / 1000;
 
