@@ -6,20 +6,34 @@ const CLAVE = "centinela-ops-prefs-unidades";
 const TIPOS_SILUETA = ["sedan", "suv", "pickup", "minivan", "hatchback"] as const;
 export type SiluetaPrefs = "auto" | (typeof TIPOS_SILUETA)[number];
 
+export const ESTILOS_MARCA_ESTADO = ["aura", "disco", "anillo"] as const;
+export type EstiloMarcaEstado = (typeof ESTILOS_MARCA_ESTADO)[number];
+
 export type PrefsUnidades = {
   /** Largo objetivo en px en pantalla (zoom lejos). Cerca usa escalaCalle. */
   pxPantalla: number;
   escalaCalle: number;
   silueta: SiluetaPrefs;
   labels: boolean;
+  /** Marca de estado en el suelo. Independiente del color del auto. */
+  estiloMarca: EstiloMarcaEstado;
+  /** Pintura de carrocería (todas las unidades). */
+  colorVehiculo: string;
+  /** Pulso de la marca de estado. */
+  pulsoMarca: boolean;
   colores: Record<EstadoUnidad, string>;
 };
+
+export const COLOR_VEHICULO_DEFECTO = "#e8eaed";
 
 export const PREFS_UNIDADES_DEFECTO: PrefsUnidades = {
   pxPantalla: 48,
   escalaCalle: 1.4,
   silueta: "auto",
   labels: true,
+  estiloMarca: "aura",
+  colorVehiculo: COLOR_VEHICULO_DEFECTO,
+  pulsoMarca: true,
   colores: { ...COLOR_ESTADO },
 };
 
@@ -51,6 +65,10 @@ function esSilueta(v: unknown): v is SiluetaPrefs {
   return typeof v === "string" && (TIPOS_SILUETA as readonly string[]).includes(v);
 }
 
+function esEstiloMarca(v: unknown): v is EstiloMarcaEstado {
+  return typeof v === "string" && (ESTILOS_MARCA_ESTADO as readonly string[]).includes(v);
+}
+
 function normalizar(raw: Partial<PrefsUnidades> | null | undefined): PrefsUnidades {
   const base = PREFS_UNIDADES_DEFECTO;
   const colores = { ...base.colores };
@@ -73,6 +91,9 @@ function normalizar(raw: Partial<PrefsUnidades> | null | undefined): PrefsUnidad
     ),
     silueta: esSilueta(raw?.silueta) ? raw.silueta : base.silueta,
     labels: typeof raw?.labels === "boolean" ? raw.labels : base.labels,
+    estiloMarca: esEstiloMarca(raw?.estiloMarca) ? raw.estiloMarca : base.estiloMarca,
+    colorVehiculo: esHex(raw?.colorVehiculo) ? raw.colorVehiculo.toLowerCase() : base.colorVehiculo,
+    pulsoMarca: typeof raw?.pulsoMarca === "boolean" ? raw.pulsoMarca : base.pulsoMarca,
     colores,
   };
 }
@@ -107,7 +128,12 @@ export function guardarPrefsUnidades(parcial: Partial<PrefsUnidades>): void {
 }
 
 export function restablecerPrefsUnidades(): void {
-  estado = { ...PREFS_UNIDADES_DEFECTO, colores: { ...COLOR_ESTADO } };
+  estado = {
+    ...PREFS_UNIDADES_DEFECTO,
+    colores: { ...COLOR_ESTADO },
+    colorVehiculo: COLOR_VEHICULO_DEFECTO,
+    pulsoMarca: true,
+  };
   persistir(estado);
   emitir();
 }

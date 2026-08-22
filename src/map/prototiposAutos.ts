@@ -1,17 +1,20 @@
 import {
+  CanvasTexture,
   CircleGeometry,
   Color,
+  DoubleSide,
   Group,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  RingGeometry,
   Vector3,
   type Material,
   type Object3D,
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { leerPrefsUnidades } from "@/data/preferenciasUnidades";
+import { leerPrefsUnidades, type EstiloMarcaEstado } from "@/data/preferenciasUnidades";
 
 /** Fallback FBX→m si no hay nodo `Sketchfab_model`. */
 export const ESCALA_SKETCHFAB = 0.0008886755094863474;
@@ -25,8 +28,8 @@ export const ESCALA_LECTURA = 1.4;
  */
 export const YAW_PROTOTIPO = Math.PI;
 
-/** Elipse de sombra, metros sobre el suelo del modelo. */
-export const ALTURA_SOMBRA_M = 0.02;
+/** Marca de estado, metros sobre el suelo del modelo. */
+export const ALTURA_MARCA_M = 0.02;
 
 export const URL_MODELO_AUTOS = "/models/autos.glb";
 
@@ -91,10 +94,6 @@ function esGrupoRueda(nombre: string): boolean {
   return /^Wheel_[A-H](?:\d{3})?$/i.test(nombre);
 }
 
-export function esMaterialCarroceria(mat: Material): boolean {
-  return /^body/i.test(mat.name);
-}
-
 export function tipoDeUnidad(id: string): TipoAuto {
   const prefs = leerPrefsUnidades();
   if (prefs.silueta !== "auto") return prefs.silueta;
@@ -106,21 +105,71 @@ export function tipoDeUnidad(id: string): TipoAuto {
   return TIPOS_AUTO[(h >>> 0) % TIPOS_AUTO.length] ?? "sedan";
 }
 
-function elipseSombra(): Mesh {
-  const geo = new CircleGeometry(1.05, 32);
-  geo.scale(1, 1.85, 1);
+let texAura: CanvasTexture | null = null;
+
+function texturaAura(): CanvasTexture {
+  if (texAura) return texAura;
+  const c = document.createElement("canvas");
+  c.width = 128;
+  c.height = 128;
+  const ctx = c.getContext("2d");
+  if (!ctx) throw new Error("canvas 2d aura");
+  const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
+  g.addColorStop(0, "rgba(255,255,255,0.92)");
+  g.addColorStop(0.42, "rgba(255,255,255,0.38)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  texAura = new CanvasTexture(c);
+  texAura.needsUpdate = true;
+  return texAura;
+}
+
+function matMarca(opts: { map?: CanvasTexture; opacity: number }): MeshBasicMaterial {
   const mat = new MeshBasicMaterial({
-    color: 0x000000,
+    color: 0xffffff,
     transparent: true,
-    opacity: 0.32,
+    opacity: opts.opacity,
     depthWrite: false,
+    side: DoubleSide,
+    toneMapped: false,
   });
+  if (opts.map) mat.map = opts.map;
+  mat.userData.opacidadBase = opts.opacity;
+  return mat;
+}
+
+function meshMarca(nombre: string, geo: CircleGeometry | RingGeometry, mat: MeshBasicMaterial, z: number): Mesh {
   const mesh = new Mesh(geo, mat);
-  mesh.name = "sombra";
-  // Proto Z-up: CircleGeometry ya vive en XY (suelo). No rotar a XZ.
-  mesh.position.z = ALTURA_SOMBRA_M;
+  mesh.name = nombre;
+  mesh.visible = false;
+  mesh.position.z = z;
   mesh.renderOrder = -1;
   return mesh;
+}
+
+/**
+ * Tres marcas en XY (suelo proto Z-up). Visible = estilo activo.
+ * Aura = blob suave; disco = puck; anillo = aro.
+ */
+function grupoMarcaEstado(): Group {
+  const g = new Group();
+  g.name = "marcaEstado";
+
+  const geoAura = new CircleGeometry(1.85, 48);
+  geoAura.scale(1, 1.7, 1);
+  const geoDisco = new CircleGeometry(1.55, 48);
+  const geoAnillo = new RingGeometry(1.25, 1.7, 48);
+  geoAnillo.scale(1, 1.25, 1);
+
+  g.add(meshMarca("marca-aura", geoAura, matMarca({ map: texturaAura(), opacity: 1 }), ALTURA_MARCA_M));
+  g.add(meshMarca("marca-disco", geoDisco, matMarca({ opacity: 0.62 }), ALTURA_MARCA_M + 0.005));
+  g.add(meshMarca("marca-anillo", geoAnillo, matMarca({ opacity: 0.9 }), ALTURA_MARCA_M + 0.01));
+  return g;
+}
+
+export function esMeshMarca(obj: Object3D): obj is Mesh {
+  return esMesh(obj) && obj.name.startsWith("marca-");
 }
 
 function leerEscalaSketchfab(raiz: Object3D): number {
@@ -135,7 +184,7 @@ function leerEscalaSketchfab(raiz: Object3D): number {
 /**
  * `_invBody * world` deja geometría en unidades FBX (sedán ~4900 u ≈ 4.4 km).
  * `inst.matrix` se reconstruye cada frame y pisa `proto.scale` — bake en hijos.
- * Sombra se agrega después, ya en metros.
+ * Marca de estado se agrega después, ya en metros.
  */
 function bakeEscalaFbxAMetros(proto: Group, escalaFbx: number): void {
   for (const child of proto.children) {
@@ -161,7 +210,7 @@ function prototipoDesde(body: Object3D, ruedas: Object3D[], escalaFbx: number): 
   }
 
   bakeEscalaFbxAMetros(proto, escalaFbx);
-  proto.add(elipseSombra());
+  proto.add(grupoMarcaEstado());
   proto.frustumCulled = false;
   proto.traverse((obj) => {
     obj.frustumCulled = false;
@@ -248,15 +297,35 @@ export function cargarPrototiposAutos(): Promise<Map<TipoAutoPack, Group>> {
   return carga;
 }
 
+function asegurarMarcaEnProto(proto: Group): void {
+  if (proto.getObjectByName("marca-aura")) return;
+  const vieja = proto.getObjectByName("sombra");
+  if (vieja) proto.remove(vieja);
+  proto.add(grupoMarcaEstado());
+}
+
+export function prototipoDeTipo(
+  prototipos: Map<TipoAutoPack, Group>,
+  tipo: TipoAutoPack,
+): Group | undefined {
+  const proto = prototipos.get(tipo) ?? prototipos.get("sedan") ?? prototipos.values().next().value;
+  if (proto) asegurarMarcaEnProto(proto);
+  return proto;
+}
+
+export function esMaterialCarroceria(mat: Material): boolean {
+  return /^body/i.test(mat.name);
+}
+
 function aplicarColorCarroceria(mat: Material, hex: string): void {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
   if (mat instanceof MeshStandardMaterial) {
     mat.color.set(hex);
-    mat.map = null;
-    mat.metalness = Math.min(mat.metalness, 0.15);
-    mat.roughness = Math.max(mat.roughness, 0.55);
-    // Emissive suave: se lee sobre satélite claro (no solo dark matter).
+    if (mat.map) mat.map = null;
+    mat.metalness = Math.min(mat.metalness, 0.18);
+    mat.roughness = Math.max(mat.roughness, 0.5);
     mat.emissive.set(hex);
-    mat.emissiveIntensity = 0.35;
+    mat.emissiveIntensity = 0.22;
     mat.envMap = null;
     mat.needsUpdate = true;
     return;
@@ -266,40 +335,105 @@ function aplicarColorCarroceria(mat: Material, hex: string): void {
   }
 }
 
-export function prototipoDeTipo(
-  prototipos: Map<TipoAutoPack, Group>,
-  tipo: TipoAutoPack,
-): Group | undefined {
-  return prototipos.get(tipo) ?? prototipos.get("sedan") ?? prototipos.values().next().value;
+function clonarMat(m: Material): Material {
+  const c = m.clone();
+  if (c.userData.opacidadBase == null && typeof m.userData.opacidadBase === "number") {
+    c.userData.opacidadBase = m.userData.opacidadBase;
+  }
+  return c;
 }
 
-export function clonarUnidad(proto: Group, colorHex: string): Group {
+export function clonarUnidad(proto: Group, colorVehiculo: string): Group {
   const inst = proto.clone(true);
+  const marca: Material[] = [];
   const paint: Material[] = [];
   inst.traverse((obj) => {
-    if (!esMesh(obj) || obj.name === "sombra") return;
+    if (!esMesh(obj)) return;
+    if (esMeshMarca(obj)) {
+      const src = obj.material;
+      if (Array.isArray(src)) {
+        obj.material = src.map((m) => {
+          const c = clonarMat(m);
+          marca.push(c);
+          return c;
+        });
+      } else {
+        const c = clonarMat(src);
+        obj.material = c;
+        marca.push(c);
+      }
+      return;
+    }
     const aplicar = (m: Material): Material => {
       if (!esMaterialCarroceria(m)) return m;
       const c = m.clone();
-      aplicarColorCarroceria(c, colorHex);
+      aplicarColorCarroceria(c, colorVehiculo);
       paint.push(c);
       return c;
     };
     obj.material = Array.isArray(obj.material) ? obj.material.map(aplicar) : aplicar(obj.material);
   });
+  inst.userData.marca = marca;
   inst.userData.paint = paint;
   return inst;
 }
 
-export function pintarUnidad(inst: Object3D, colorHex: string): void {
+export function pintarCarroceria(inst: Object3D, colorHex: string): void {
   const paint = inst.userData.paint as Material[] | undefined;
   if (!paint) return;
   for (const m of paint) aplicarColorCarroceria(m, colorHex);
 }
 
+export function pintarMarcaEstado(inst: Object3D, colorHex: string, estilo: EstiloMarcaEstado): void {
+  inst.traverse((obj) => {
+    if (!esMeshMarca(obj)) return;
+    obj.visible = obj.name === `marca-${estilo}`;
+  });
+  const mats = inst.userData.marca as Material[] | undefined;
+  if (!mats) return;
+  for (const m of mats) {
+    if ("color" in m && m.color instanceof Color) m.color.set(colorHex);
+  }
+}
+
+/** Alias HMR: callers viejos (`pintarUnidad`). */
+export function pintarUnidad(inst: Object3D, colorHex: string): void {
+  pintarMarcaEstado(inst, colorHex, leerPrefsUnidades().estiloMarca);
+}
+
+/** Pulso senoidal ~1.8s. `activo=false` restaura opacidad base. */
+export function pulsarMarcas(inst: Object3D, tMs: number, activo: boolean): void {
+  const mats = inst.userData.marca as Material[] | undefined;
+  if (!mats) return;
+  const k = activo ? 0.56 + 0.44 * (0.5 + 0.5 * Math.sin((tMs / 1800) * Math.PI * 2)) : 1;
+  for (const m of mats) {
+    if (!("opacity" in m)) continue;
+    const base = typeof m.userData.opacidadBase === "number" ? m.userData.opacidadBase : 0.7;
+    m.opacity = base * k;
+  }
+}
+
+export function tieneMarcaEstado(inst: Object3D): boolean {
+  return inst.getObjectByName("marca-aura") != null;
+}
+
 export function disposePaintUnidad(inst: Object3D): void {
+  const marca = inst.userData.marca as Material[] | undefined;
   const paint = inst.userData.paint as Material[] | undefined;
-  if (!paint) return;
-  for (const m of paint) m.dispose();
-  inst.userData.paint = [];
+  if (marca) {
+    for (const m of marca) m.dispose();
+    inst.userData.marca = [];
+  }
+  if (paint) {
+    for (const m of paint) m.dispose();
+    inst.userData.paint = [];
+  }
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    cache = null;
+    carga = null;
+    texAura = null;
+  });
 }

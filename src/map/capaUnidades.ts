@@ -259,11 +259,18 @@ export function engancharClicUnidades(
     setDataUnidades(map, opts.getUnidades(), id);
   };
 
+  let moveRaf = 0;
+  let movePoint: MapMouseEvent["point"] | null = null;
   const onMove = (e: MapMouseEvent) => {
-    const layers = capasClic(map);
-    if (!layers.length) return;
-    const hits = map.queryRenderedFeatures(e.point, { layers });
-    map.getCanvas().style.cursor = hits.length ? "pointer" : "";
+    movePoint = e.point;
+    if (moveRaf) return;
+    moveRaf = requestAnimationFrame(() => {
+      moveRaf = 0;
+      const layers = capasClic(map);
+      if (!layers.length || !movePoint) return;
+      const hits = map.queryRenderedFeatures(movePoint, { layers });
+      map.getCanvas().style.cursor = hits.length ? "pointer" : "";
+    });
   };
 
   map.on("click", onClick);
@@ -271,6 +278,7 @@ export function engancharClicUnidades(
   return () => {
     map.off("click", onClick);
     map.off("mousemove", onMove);
+    if (moveRaf) cancelAnimationFrame(moveRaf);
     map.getCanvas().style.cursor = "";
   };
 }

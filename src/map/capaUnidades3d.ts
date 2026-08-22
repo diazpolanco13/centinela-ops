@@ -16,8 +16,11 @@ import {
   cargarPrototiposAutos,
   clonarUnidad,
   disposePaintUnidad,
-  pintarUnidad,
+  pintarCarroceria,
+  pintarMarcaEstado,
+  pulsarMarcas,
   prototipoDeTipo,
+  tieneMarcaEstado,
   tipoDeUnidad,
   type TipoAutoPack,
 } from "@/map/prototiposAutos";
@@ -71,6 +74,9 @@ class CapaUnidades3d implements CustomLayerInterface {
   private prototipos: Map<TipoAutoPack, Group> | undefined;
   private instancias = new Map<string, Group>();
   private pendientes: { unidades: UnidadEnMapa[]; selectedId: string | null } | null = null;
+  private pulsoTimer = 0;
+  private bufW = 0;
+  private bufH = 0;
 
   onAdd(map: MapLibreMap, gl: WebGLRenderingContext | WebGL2RenderingContext): void {
     this.soltarInstancias();
@@ -104,6 +110,7 @@ class CapaUnidades3d implements CustomLayerInterface {
   }
 
   onRemove(): void {
+    this.pararPulso();
     if (this.map) capas.delete(this.map);
     this.soltarInstancias();
     this.prototipos = undefined;
@@ -111,6 +118,8 @@ class CapaUnidades3d implements CustomLayerInterface {
     this.scene = undefined;
     this.camera = undefined;
     this.map = undefined;
+    this.bufW = 0;
+    this.bufH = 0;
     // Contexto WebGL compartido con MapLibre: no renderer.dispose().
     this.renderer = undefined;
   }
@@ -135,11 +144,17 @@ class CapaUnidades3d implements CustomLayerInterface {
     if (!main) return;
 
     const canvas = map.getCanvas();
-    renderer.setDrawingBufferSize(canvas.width, canvas.height, 1);
+    if (canvas.width !== this.bufW || canvas.height !== this.bufH) {
+      this.bufW = canvas.width;
+      this.bufH = canvas.height;
+      renderer.setDrawingBufferSize(canvas.width, canvas.height, 1);
+    }
 
+    const prefs = leerPrefsUnidades();
     const center = map.getCenter();
     const zoom = map.getZoom();
     const escalaZoom = escalaMeshUnidad(zoom, center.lat);
+    const tMs = performance.now();
     const origin = MercatorCoordinate.fromLngLat([center.lng, center.lat], 0);
     const s = origin.meterInMercatorCoordinateUnits();
     _origen.makeTranslation(origin.x, origin.y, origin.z).scale(_scale.set(s, -s, s));
@@ -161,10 +176,32 @@ class CapaUnidades3d implements CustomLayerInterface {
         .multiply(_rotZ.makeRotationZ(yaw))
         .scale(_scale.set(escala, escala, escala));
       inst.matrixWorldNeedsUpdate = true;
+      pulsarMarcas(inst, tMs, prefs.pulsoMarca);
     }
 
     renderer.resetState();
     renderer.render(scene, camera);
+  }
+
+  /** Pulso fuera de `render`: `triggerRepaint` adentro = loop 60 fps + warning Chrome. */
+  private arrancarPulso(): void {
+    if (this.pulsoTimer) return;
+    const tick = () => {
+      const map = this.map;
+      if (!map || !leerPrefsUnidades().pulsoMarca || this.instancias.size === 0) {
+        this.pulsoTimer = 0;
+        return;
+      }
+      map.triggerRepaint();
+      this.pulsoTimer = window.setTimeout(tick, 80);
+    };
+    this.pulsoTimer = window.setTimeout(tick, 80);
+  }
+
+  private pararPulso(): void {
+    if (!this.pulsoTimer) return;
+    window.clearTimeout(this.pulsoTimer);
+    this.pulsoTimer = 0;
   }
 
   private aplicarUnidades(unidades: UnidadEnMapa[], selectedId: string | null): void {
@@ -183,33 +220,23 @@ class CapaUnidades3d implements CustomLayerInterface {
     for (const u of unidades) {
       let inst = this.instancias.get(u.id);
       const tipo = tipoDeUnidad(u.id);
-      const color = leerPrefsUnidades().colores[u.estado];
-      if (!inst) {
-        const proto = prototipoDeTipo(prototipos, tipo);
-        if (!proto) continue;
-        inst = clonarUnidad(proto, color);
-        inst.userData.tipo = tipo;
-        inst.userData.estado = u.estado;
-        inst.userData.color = color;
-        inst.matrixAutoUpdate = false;
-        inst.frustumCulled = false;
-        inst.traverse((obj) => {
-          obj.frustumCulled = false;
-        });
-        this.instancias.set(u.id, inst);
-        scene.add(inst);
-      } else if (inst.userData.tipo !== tipo) {
-        scene.remove(inst);
-        disposePaintUnidad(inst);
+      const prefs = leerPrefsUnidades();
+      const color = prefs.colores[u.estado];
+      const estilo = prefs.estiloMarca;
+      const colorFlota = prefs.colorVehiculo;
+      const sinPaint = !Array.isArray(inst?.userData.paint) || inst.userData.paint.length === 0;
+      if (!inst || inst.userData.tipo !== tipo || !tieneMarcaEstado(inst) || sinPaint) {
+        if (inst) {
+          scene.remove(inst);
+          disposePaintUnidad(inst);
+        }
         const proto = prototipoDeTipo(prototipos, tipo);
         if (!proto) {
           this.instancias.delete(u.id);
           continue;
         }
-        inst = clonarUnidad(proto, color);
+        inst = clonarUnidad(proto, colorFlota);
         inst.userData.tipo = tipo;
-        inst.userData.estado = u.estado;
-        inst.userData.color = color;
         inst.matrixAutoUpdate = false;
         inst.frustumCulled = false;
         inst.traverse((obj) => {
@@ -217,16 +244,36 @@ class CapaUnidades3d implements CustomLayerInterface {
         });
         this.instancias.set(u.id, inst);
         scene.add(inst);
-      } else if (inst.userData.estado !== u.estado || inst.userData.color !== color) {
-        pintarUnidad(inst, color);
+        pintarMarcaEstado(inst, color, estilo);
         inst.userData.estado = u.estado;
         inst.userData.color = color;
+        inst.userData.estiloMarca = estilo;
+        inst.userData.colorVehiculo = colorFlota;
+      } else {
+        if (
+          inst.userData.estado !== u.estado ||
+          inst.userData.color !== color ||
+          inst.userData.estiloMarca !== estilo
+        ) {
+          pintarMarcaEstado(inst, color, estilo);
+          inst.userData.estado = u.estado;
+          inst.userData.color = color;
+          inst.userData.estiloMarca = estilo;
+        }
+        if (inst.userData.colorVehiculo !== colorFlota) {
+          pintarCarroceria(inst, colorFlota);
+          inst.userData.colorVehiculo = colorFlota;
+        }
       }
 
+      if (!inst) continue;
       inst.userData.lngLat = u.lngLat;
       inst.userData.course = u.course ?? 0;
       inst.userData.foco = u.id === selectedId;
     }
+
+    if (leerPrefsUnidades().pulsoMarca && this.instancias.size > 0) this.arrancarPulso();
+    else this.pararPulso();
   }
 
   private soltarInstancias(): void {

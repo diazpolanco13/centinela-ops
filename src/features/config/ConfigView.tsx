@@ -1,13 +1,16 @@
 import type { EstadoUnidad } from "@/data/unidadesMock";
 import {
+  COLOR_VEHICULO_DEFECTO,
   RANGO_PREFS_UNIDADES,
   guardarPrefsUnidades,
   restablecerPrefsUnidades,
   usePrefsUnidades,
+  type EstiloMarcaEstado,
   type SiluetaPrefs,
 } from "@/data/preferenciasUnidades";
 import { TIPOS_AUTO } from "@/map/prototiposAutos";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import {
   Card,
   CardContent,
@@ -39,6 +42,12 @@ const ESTADOS_COLOR: { id: EstadoUnidad; label: string }[] = [
   { id: "en_zona", label: "En zona" },
   { id: "detenida", label: "Detenida" },
   { id: "sin_senal", label: "Sin señal" },
+];
+
+const ESTILOS_MARCA: { value: EstiloMarcaEstado; label: string; hint: string }[] = [
+  { value: "aura", label: "Aura", hint: "Mancha suave bajo el auto" },
+  { value: "disco", label: "Disco", hint: "Puck sólido estilo HUD" },
+  { value: "anillo", label: "Anillo", hint: "Aro en el suelo" },
 ];
 
 const SILUETAS: { value: SiluetaPrefs; label: string }[] = [
@@ -93,7 +102,7 @@ export function ConfigView() {
               <CardHeader>
                 <CardTitle>Vehículos</CardTitle>
                 <CardDescription>
-                  Tamaño, silueta, colores y etiquetas de unidades en el mapa.
+                  Tamaño, silueta, marca de estado, colores y etiquetas.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -169,8 +178,50 @@ export function ConfigView() {
                     </FieldDescription>
                   </Field>
 
+                  <Field orientation="horizontal" className="items-center justify-between">
+                    <FieldLabel htmlFor="cfg-color-auto">Color del vehículo</FieldLabel>
+                    <input
+                      id="cfg-color-auto"
+                      type="color"
+                      value={prefs.colorVehiculo ?? COLOR_VEHICULO_DEFECTO}
+                      onChange={(e) => guardarPrefsUnidades({ colorVehiculo: e.target.value })}
+                      className="h-9 w-14 cursor-pointer rounded-md border border-border bg-card p-1 shadow-sm"
+                      aria-label="Color del vehículo"
+                    />
+                  </Field>
+
+                  <Field>
+                    <FieldLabel>Marca de estado</FieldLabel>
+                    <ButtonGroup className="w-full max-w-xs" aria-label="Estilo de marca de estado">
+                      {ESTILOS_MARCA.map((e) => (
+                        <Button
+                          key={e.value}
+                          type="button"
+                          variant={prefs.estiloMarca === e.value ? "default" : "outline"}
+                          onClick={() => guardarPrefsUnidades({ estiloMarca: e.value })}
+                        >
+                          {e.label}
+                        </Button>
+                      ))}
+                    </ButtonGroup>
+                    <FieldDescription>
+                      {ESTILOS_MARCA.find((e) => e.value === prefs.estiloMarca)?.hint ??
+                        "Color de estado en el suelo, no en el auto."}
+                    </FieldDescription>
+                  </Field>
+
+                  <Field orientation="horizontal" className="items-center justify-between">
+                    <FieldLabel htmlFor="cfg-pulso">Pulso de marca</FieldLabel>
+                    <Switch
+                      id="cfg-pulso"
+                      checked={prefs.pulsoMarca !== false}
+                      onCheckedChange={(v) => guardarPrefsUnidades({ pulsoMarca: v })}
+                    />
+                  </Field>
+
                   <FieldSet>
                     <FieldLegend variant="label">Colores por estado</FieldLegend>
+                    <FieldDescription>Pintan la marca en el suelo. El auto queda de fábrica.</FieldDescription>
                     <FieldGroup className="gap-3">
                       {ESTADOS_COLOR.map(({ id, label }) => (
                         <Field key={id} orientation="horizontal" className="items-center justify-between">
