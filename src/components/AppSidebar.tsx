@@ -6,6 +6,7 @@ import {
   MapPinned,
   Network,
   Radio,
+  Settings,
   Shield,
   Target,
 } from "lucide-react";
@@ -101,6 +102,19 @@ export function AppSidebar({ sesion }: { sesion: Sesion }) {
             <SidebarMenu>
               <ItemMenu to="/reportes" icono={FileText} label="Reportes" activo={rutaActiva(pathname, "/reportes")} />
               <ItemMenu to="/alertas" icono={AlertTriangle} label="Alertas" activo={rutaActiva(pathname, "/alertas")} />
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Sistema</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <ItemMenu
+                to="/configuracion"
+                icono={Settings}
+                label="Configuración"
+                activo={rutaActiva(pathname, "/configuracion")}
+              />
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

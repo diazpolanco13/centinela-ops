@@ -9,9 +9,9 @@ import {
   type Group,
 } from "three";
 import { MercatorCoordinate, type CustomLayerInterface, type CustomRenderMethodInput, type Map as MapLibreMap } from "maplibre-gl";
-import { COLOR_ESTADO, type UnidadEnMapa } from "@/data/unidadesMock";
+import { type UnidadEnMapa } from "@/data/unidadesMock";
+import { leerPrefsUnidades } from "@/data/preferenciasUnidades";
 import {
-  ESCALA_LECTURA,
   YAW_PROTOTIPO,
   cargarPrototiposAutos,
   clonarUnidad,
@@ -24,33 +24,30 @@ import {
 
 export const ID_CAPA_UNIDADES_3D = "unidades-3d";
 
-/** LOD: mesh three a este zoom; sprites 2D debajo. */
-export const ZOOM_UNIDADES_3D = 16;
-
 /** Escala extra del foco. No cambia color (alerta ops = rojo). */
 export const ESCALA_SELECCION = 1.12;
 
-/**
- * Escala al cruzar LOD (barra ~200 m). 7.5× ≈ 33 m = punto; 15× ≈ 65 m
- * se lee forma y rumbo. Baja a ESCALA_LECTURA en zoom calle.
- */
-export const ESCALA_APARICION = 15;
-
-/** A este zoom (y más) el auto ya es tamaño calle. */
-const ZOOM_ESCALA_CALLE = 19.5;
+/** Largo aprox. del mesh 1:1 (m). Base para px → escala. */
+const LARGO_AUTO_M = 4.8;
 
 /** Metros sobre el suelo: evita z-fight con el tile. */
 const ALTITUD_M = 0.2;
 
-export function escalaMeshUnidad(zoom: number): number {
-  const span = ZOOM_ESCALA_CALLE - ZOOM_UNIDADES_3D;
-  const t = Math.min(1, Math.max(0, (zoom - ZOOM_UNIDADES_3D) / span));
-  const ease = 1 - (1 - t) ** 2;
-  return ESCALA_APARICION + ease * (ESCALA_LECTURA - ESCALA_APARICION);
+/** Metros por pixel CSS (Web Mercator). */
+function metrosPorPixel(lat: number, zoom: number): number {
+  const cos = Math.cos((lat * Math.PI) / 180);
+  return (cos * 2 * Math.PI * 6378137) / (256 * 2 ** zoom);
 }
 
-function proyeccionEsGlobo(map: MapLibreMap): boolean {
-  return map.getProjection()?.type === "globe";
+/**
+ * Zoom lejos: tamaño fijo en pantalla (pxPantalla).
+ * Zoom calle: no baja de escalaCalle (geo ~1:1×).
+ */
+export function escalaMeshUnidad(zoom: number, lat: number): number {
+  const prefs = leerPrefsUnidades();
+  const mpp = metrosPorPixel(lat, zoom);
+  const escalaPantalla = (prefs.pxPantalla * mpp) / LARGO_AUTO_M;
+  return Math.max(prefs.escalaCalle, escalaPantalla);
 }
 
 const _clip = new Matrix4();
@@ -69,23 +66,6 @@ function idPrimerSymbolConTexto(map: MapLibreMap): string | undefined {
   return undefined;
 }
 
-/** Sprites se ocultan solo cuando el mesh se pinta de verdad (mercator + zoom). */
-const OPACIDAD_CON_MESH = ["step", ["zoom"], 1, ZOOM_UNIDADES_3D, 0] as const;
-
-function syncOpacidadSprites(map: MapLibreMap, pintarMesh: boolean): void {
-  const op = pintarMesh ? OPACIDAD_CON_MESH : 1;
-  if (map.getLayer("unidades-puck")) {
-    map.setPaintProperty("unidades-puck", "icon-opacity", op);
-  }
-  if (map.getLayer("unidades-apple")) {
-    map.setPaintProperty("unidades-apple", "icon-opacity", op);
-  }
-}
-
-function debePintarMesh(map: MapLibreMap, hayInstancias: boolean): boolean {
-  return hayInstancias && !proyeccionEsGlobo(map);
-}
-
 class CapaUnidades3d implements CustomLayerInterface {
   id = ID_CAPA_UNIDADES_3D;
   type = "custom" as const;
@@ -98,8 +78,6 @@ class CapaUnidades3d implements CustomLayerInterface {
   private prototipos: Map<TipoAutoPack, Group> | undefined;
   private instancias = new Map<string, Group>();
   private pendientes: { unidades: UnidadEnMapa[]; selectedId: string | null } | null = null;
-  /** Último `pintarMesh` enviado a icon-opacity (no setPaint cada frame). */
-  private opacityMeshActivo = false;
 
   onAdd(map: MapLibreMap, gl: WebGLRenderingContext | WebGL2RenderingContext): void {
     this.soltarInstancias();
@@ -133,10 +111,6 @@ class CapaUnidades3d implements CustomLayerInterface {
   }
 
   onRemove(): void {
-    if (this.map) {
-      this.opacityMeshActivo = false;
-      syncOpacidadSprites(this.map, false);
-    }
     this.soltarInstancias();
     this.scene = undefined;
     this.camera = undefined;
@@ -159,15 +133,7 @@ class CapaUnidades3d implements CustomLayerInterface {
     const scene = this.scene;
     const camera = this.camera;
     if (!map || !renderer || !scene || !camera) return;
-
-    const pintarMesh = debePintarMesh(map, this.instancias.size > 0);
-    if (pintarMesh !== this.opacityMeshActivo) {
-      this.opacityMeshActivo = pintarMesh;
-      syncOpacidadSprites(map, pintarMesh);
-    }
-
-    if (!pintarMesh) return;
-    if (map.getZoom() < ZOOM_UNIDADES_3D) return;
+    if (this.instancias.size === 0) return;
 
     const main = args.defaultProjectionData?.mainMatrix;
     if (!main) return;
@@ -177,7 +143,7 @@ class CapaUnidades3d implements CustomLayerInterface {
 
     const center = map.getCenter();
     const zoom = map.getZoom();
-    const escalaZoom = escalaMeshUnidad(zoom);
+    const escalaZoom = escalaMeshUnidad(zoom, center.lat);
     const origin = MercatorCoordinate.fromLngLat([center.lng, center.lat], 0);
     const s = origin.meterInMercatorCoordinateUnits();
     _origen.makeTranslation(origin.x, origin.y, origin.z).scale(_scale.set(s, -s, s));
@@ -192,8 +158,7 @@ class CapaUnidades3d implements CustomLayerInterface {
       const dx = (mc.x - origin.x) / s;
       const dy = (mc.y - origin.y) / -s;
       const dz = (mc.z - origin.z) / s;
-      // Bake deja proto Z-up (alto = Z). RotX +90° del ejemplo glTF Y-up
-      // los para de pie. Yaw = eje Z (suelo).
+      // Bake deja proto Z-up (alto = Z). Yaw = eje Z (suelo).
       const yaw = YAW_PROTOTIPO - (course * Math.PI) / 180;
       inst.matrix
         .makeTranslation(dx, dy, dz)
@@ -209,7 +174,6 @@ class CapaUnidades3d implements CustomLayerInterface {
   private aplicarUnidades(unidades: UnidadEnMapa[], selectedId: string | null): void {
     const scene = this.scene;
     const prototipos = this.prototipos;
-    const map = this.map;
     if (!scene || !prototipos) return;
 
     const vivas = new Set(unidades.map((u) => u.id));
@@ -223,12 +187,14 @@ class CapaUnidades3d implements CustomLayerInterface {
     for (const u of unidades) {
       let inst = this.instancias.get(u.id);
       const tipo = tipoDeUnidad(u.id);
+      const color = leerPrefsUnidades().colores[u.estado];
       if (!inst) {
         const proto = prototipoDeTipo(prototipos, tipo);
         if (!proto) continue;
-        inst = clonarUnidad(proto, COLOR_ESTADO[u.estado]);
+        inst = clonarUnidad(proto, color);
         inst.userData.tipo = tipo;
         inst.userData.estado = u.estado;
+        inst.userData.color = color;
         inst.matrixAutoUpdate = false;
         inst.frustumCulled = false;
         inst.traverse((obj) => {
@@ -236,20 +202,34 @@ class CapaUnidades3d implements CustomLayerInterface {
         });
         this.instancias.set(u.id, inst);
         scene.add(inst);
-      } else if (inst.userData.estado !== u.estado) {
-        pintarUnidad(inst, COLOR_ESTADO[u.estado]);
+      } else if (inst.userData.tipo !== tipo) {
+        scene.remove(inst);
+        disposePaintUnidad(inst);
+        const proto = prototipoDeTipo(prototipos, tipo);
+        if (!proto) {
+          this.instancias.delete(u.id);
+          continue;
+        }
+        inst = clonarUnidad(proto, color);
+        inst.userData.tipo = tipo;
         inst.userData.estado = u.estado;
+        inst.userData.color = color;
+        inst.matrixAutoUpdate = false;
+        inst.frustumCulled = false;
+        inst.traverse((obj) => {
+          obj.frustumCulled = false;
+        });
+        this.instancias.set(u.id, inst);
+        scene.add(inst);
+      } else if (inst.userData.estado !== u.estado || inst.userData.color !== color) {
+        pintarUnidad(inst, color);
+        inst.userData.estado = u.estado;
+        inst.userData.color = color;
       }
 
       inst.userData.lngLat = u.lngLat;
       inst.userData.course = u.course ?? 0;
       inst.userData.foco = u.id === selectedId;
-    }
-
-    if (map) {
-      const pintarMesh = debePintarMesh(map, this.instancias.size > 0);
-      this.opacityMeshActivo = pintarMesh;
-      syncOpacidadSprites(map, pintarMesh);
     }
   }
 

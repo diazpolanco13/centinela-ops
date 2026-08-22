@@ -11,6 +11,7 @@ import {
   type Object3D,
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { leerPrefsUnidades } from "@/data/preferenciasUnidades";
 
 /** Fallback FBX→m si no hay nodo `Sketchfab_model`. */
 export const ESCALA_SKETCHFAB = 0.0008886755094863474;
@@ -95,6 +96,8 @@ export function esMaterialCarroceria(mat: Material): boolean {
 }
 
 export function tipoDeUnidad(id: string): TipoAuto {
+  const prefs = leerPrefsUnidades();
+  if (prefs.silueta !== "auto") return prefs.silueta;
   let h = 2166136261;
   for (let i = 0; i < id.length; i++) {
     h ^= id.charCodeAt(i);

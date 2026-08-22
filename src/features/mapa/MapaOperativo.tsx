@@ -4,8 +4,7 @@ import { Globe, Home, LocateFixed, Radio, X } from "lucide-react";
 import { CARACAS_CENTRO } from "@/data/geo";
 import { UNIDADES_MOCK, type UnidadEnMapa } from "@/data/unidadesMock";
 import { usePosicionesTraccar } from "@/data/usePosicionesTraccar";
-import { engancharClicUnidades, montarCapaUnidades, setDataUnidades } from "@/map/capaUnidades";
-import { prepararIconosUnidad } from "@/map/iconosUnidad";
+import { engancharClicUnidades, montarCapaUnidades, setDataUnidades, aplicarPrefsUnidades } from "@/map/capaUnidades";
 import {
   cargarBaseMapa,
   cargarModo3d,
@@ -17,6 +16,7 @@ import {
   guardarVistaMapa,
   VISTA_DEFECTO,
 } from "@/data/preferenciasMapa";
+import { usePrefsUnidades } from "@/data/preferenciasUnidades";
 import {
   calcularReglaEscala,
   zoomParaAnchoMetros,
@@ -82,6 +82,7 @@ export function MapaOperativo() {
   const [fallback, setFallback] = useState<InfoFallbackBaseMapa | null>(null);
   const [gpsActivo, setGpsActivo] = useState(false);
   const [ocultarAvisoTraccar, setOcultarAvisoTraccar] = useState(false);
+  const prefsUnidades = usePrefsUnidades();
 
   const { error: errorTraccar } = usePosicionesTraccar((unidades) => {
     unidadesRef.current = unidades;
@@ -91,8 +92,10 @@ export function MapaOperativo() {
   });
 
   useEffect(() => {
-    void prepararIconosUnidad();
-  }, []);
+    const map = mapRef.current;
+    if (!map || !listoRef.current) return;
+    aplicarPrefsUnidades(map, unidadesRef.current, selectedIdRef.current);
+  }, [prefsUnidades]);
 
   useEffect(() => {
     setOcultarAvisoTraccar(false);

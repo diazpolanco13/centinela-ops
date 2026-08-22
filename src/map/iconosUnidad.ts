@@ -1,5 +1,6 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { EstadoUnidad } from "@/data/unidadesMock";
+import { leerPrefsUnidades } from "@/data/preferenciasUnidades";
 
 /** Sprite denso. MapLibre muestra CSS_PX a icon-size 1. */
 const CSS_PX = 80;
@@ -20,12 +21,20 @@ type PaletaAuto = {
   vidrio: string;
 };
 
-const PALETA: Record<EstadoUnidad, PaletaAuto> = {
-  en_ruta: { metal: "#f4f4f5", vidrio: "#0f172a" },
-  en_zona: { metal: "#ecfdf5", vidrio: "#042f2e" },
-  detenida: { metal: "#f3e7d3", vidrio: "#1c1917" },
-  sin_senal: { metal: "#94a3b8", vidrio: "#1e293b" },
-};
+/** Vidrio oscuro derivado del metal (hex #rrggbb). */
+function vidrioDeMetal(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  if (!Number.isFinite(n)) return "#0f172a";
+  const r = Math.max(0, Math.round(((n >> 16) & 255) * 0.18));
+  const g = Math.max(0, Math.round(((n >> 8) & 255) * 0.22));
+  const b = Math.max(0, Math.round((n & 255) * 0.28));
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+}
+
+function paletaDeEstado(estado: EstadoUnidad): PaletaAuto {
+  const metal = leerPrefsUnidades().colores[estado];
+  return { metal, vidrio: vidrioDeMetal(metal) };
+}
 
 export function idIconoPuck(estado: EstadoUnidad): string {
   return `unidad-carro-${estado}`;
@@ -36,6 +45,13 @@ export function idIconoApple(estado: EstadoUnidad): string {
 }
 
 let plantillaNoun: string | null = null;
+/** Firma de colores con la que se construyó el cache. */
+let firmaColoresCache: string | null = null;
+
+function firmaColoresActual(): string {
+  const c = leerPrefsUnidades().colores;
+  return ESTADOS_ICONO.map((e) => `${e}:${c[e]}`).join("|");
+}
 
 async function cargarPlantillaNoun(): Promise<string> {
   if (plantillaNoun) return plantillaNoun;
@@ -52,7 +68,7 @@ function dDelPath(svg: string): string {
 }
 
 function svgAuto(plantilla: string, estado: EstadoUnidad): string {
-  const p = PALETA[estado];
+  const p = paletaDeEstado(estado);
   const d = dDelPath(plantilla.replace(/<text[\s\S]*?<\/text>/g, ""));
   const halo = `d="${d}" fill="none" fill-rule="evenodd" clip-rule="evenodd" stroke-linejoin="round" stroke-linecap="round"`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-8 -6 116 116" width="116" height="116">
@@ -90,25 +106,52 @@ type CacheIcono = { data: ImageData; pixelRatio: number };
 
 let cache: Map<string, CacheIcono> | null = null;
 let preparing: Promise<void> | null = null;
+let generacionCache = 0;
 
-async function construirCache(): Promise<Map<string, CacheIcono>> {
+async function construirCache(gen: number): Promise<Map<string, CacheIcono> | null> {
   const plantilla = await cargarPlantillaNoun();
+  if (gen !== generacionCache) return null;
   const next = new Map<string, CacheIcono>();
   for (const estado of ESTADOS_ICONO) {
     next.set(idIconoPuck(estado), {
       data: await rasterSvg(svgAuto(plantilla, estado)),
       pixelRatio: PIXEL_RATIO,
     });
+    if (gen !== generacionCache) return null;
   }
+  firmaColoresCache = firmaColoresActual();
   return next;
 }
 
+export function invalidarCacheIconosUnidad(): void {
+  generacionCache += 1;
+  cache = null;
+  preparing = null;
+  firmaColoresCache = null;
+}
+
 export function prepararIconosUnidad(): Promise<void> {
-  if (cache) return Promise.resolve();
-  preparing ??= construirCache().then((built) => {
-    cache = built;
+  if (cache && firmaColoresCache === firmaColoresActual()) return Promise.resolve();
+  if (cache && firmaColoresCache !== firmaColoresActual()) {
+    invalidarCacheIconosUnidad();
+  }
+  if (preparing) return preparing;
+  const gen = generacionCache;
+  preparing = construirCache(gen).then((built) => {
+    if (gen !== generacionCache) return;
+    if (built) cache = built;
+  }).finally(() => {
+    if (gen === generacionCache) preparing = null;
   });
   return preparing;
+}
+
+/** Regenera sprites si cambiaron colores de prefs. */
+export async function refrescarIconosUnidadSiHaceFalta(map: MapLibreMap): Promise<void> {
+  if (cache && firmaColoresCache === firmaColoresActual()) return;
+  invalidarCacheIconosUnidad();
+  await prepararIconosUnidad();
+  reemplazarIconosUnidad(map);
 }
 
 export function asegurarIconosUnidad(map: MapLibreMap): boolean {
@@ -134,5 +177,6 @@ if (import.meta.hot) {
     cache = null;
     preparing = null;
     plantillaNoun = null;
+    firmaColoresCache = null;
   });
 }

@@ -12,6 +12,7 @@ const RUTAS: { test: (p: string) => boolean; migas: MigaPan[] }[] = [
   { test: (p) => p.startsWith("/unidades"), migas: [{ label: "Mapa", to: "/" }, { label: "Unidades" }] },
   { test: (p) => p.startsWith("/reportes"), migas: [{ label: "Mapa", to: "/" }, { label: "Reportes" }] },
   { test: (p) => p.startsWith("/alertas"), migas: [{ label: "Mapa", to: "/" }, { label: "Alertas" }] },
+  { test: (p) => p.startsWith("/configuracion"), migas: [{ label: "Mapa", to: "/" }, { label: "Configuración" }] },
 ];
 
 export function migasPanDeRuta(pathname: string): MigaPan[] {

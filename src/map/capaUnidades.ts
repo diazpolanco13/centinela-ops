@@ -7,52 +7,18 @@ import type {
 } from "maplibre-gl";
 import { etiquetaCorta } from "@/data/traccar";
 import { COLOR_ESTADO, type UnidadEnMapa } from "@/data/unidadesMock";
-import {
-  asegurarIconosUnidad,
-  idIconoApple,
-  idIconoPuck,
-  prepararIconosUnidad,
-  reemplazarIconosUnidad,
-} from "@/map/iconosUnidad";
+import { leerPrefsUnidades } from "@/data/preferenciasUnidades";
 import { montarCapaUnidades3d, setDataUnidades3d } from "@/map/capaUnidades3d";
 
 export { COLOR_ESTADO };
 
 export const ID_FUENTE_UNIDADES = "unidades";
-export const ID_CAPA_UNIDADES_PUCK = "unidades-puck";
-export const ID_CAPA_UNIDADES_APPLE = "unidades-apple";
+/** Círculo invisible: hit-test clic (mesh Three no es queryable). */
+export const ID_CAPA_UNIDADES_HIT = "unidades-hit";
 export const ID_CAPA_UNIDADES_LABEL = "unidades-label";
 export const ID_CAPA_UNIDADES_LABEL_SEL = "unidades-label-sel";
 
 const VACIO: FeatureCollection = { type: "FeatureCollection", features: [] };
-
-const ICONO_PUCK_POR_ESTADO: ExpressionSpecification = [
-  "match",
-  ["get", "estado"],
-  "en_zona",
-  idIconoPuck("en_zona"),
-  "en_ruta",
-  idIconoPuck("en_ruta"),
-  "detenida",
-  idIconoPuck("detenida"),
-  "sin_senal",
-  idIconoPuck("sin_senal"),
-  idIconoPuck("en_ruta"),
-];
-
-const ICONO_APPLE_POR_ESTADO: ExpressionSpecification = [
-  "match",
-  ["get", "estado"],
-  "en_zona",
-  idIconoApple("en_zona"),
-  "en_ruta",
-  idIconoApple("en_ruta"),
-  "detenida",
-  idIconoApple("detenida"),
-  "sin_senal",
-  idIconoApple("sin_senal"),
-  idIconoApple("en_ruta"),
-];
 
 export function geojsonUnidades(
   unidades: UnidadEnMapa[],
@@ -76,39 +42,6 @@ export function geojsonUnidades(
   };
 }
 
-/** Sprite 80px. Punto medio: se lee el auto, no tapa manzana. */
-const TAM_PUCK: ExpressionSpecification = [
-  "interpolate",
-  ["linear"],
-  ["zoom"],
-  10,
-  0.34,
-  12,
-  0.46,
-  14,
-  0.6,
-  16,
-  0.76,
-  18,
-  0.92,
-];
-
-const TAM_APPLE: ExpressionSpecification = [
-  "interpolate",
-  ["linear"],
-  ["zoom"],
-  10,
-  0.44,
-  12,
-  0.58,
-  14,
-  0.74,
-  16,
-  0.92,
-  18,
-  1.08,
-];
-
 const TAM_LABEL: ExpressionSpecification = [
   "interpolate",
   ["linear"],
@@ -119,50 +52,67 @@ const TAM_LABEL: ExpressionSpecification = [
   10,
 ];
 
-const ICON_ROTATE: ExpressionSpecification = [
-  "to-number",
-  ["coalesce", ["get", "course"], 0],
-];
-
 function syncLayoutUnidades(map: MapLibreMap): void {
-  if (map.getLayer(ID_CAPA_UNIDADES_PUCK)) {
-    map.setLayoutProperty(ID_CAPA_UNIDADES_PUCK, "icon-image", ICONO_PUCK_POR_ESTADO);
-    map.setLayoutProperty(ID_CAPA_UNIDADES_PUCK, "icon-size", TAM_PUCK);
-    map.setLayoutProperty(ID_CAPA_UNIDADES_PUCK, "icon-rotate", ICON_ROTATE);
-    map.setLayoutProperty(ID_CAPA_UNIDADES_PUCK, "icon-rotation-alignment", "map");
-    map.setLayoutProperty(ID_CAPA_UNIDADES_PUCK, "icon-pitch-alignment", "map");
-    map.setPaintProperty(ID_CAPA_UNIDADES_PUCK, "icon-opacity", 1);
-  }
-  if (map.getLayer(ID_CAPA_UNIDADES_APPLE)) {
-    map.setLayoutProperty(ID_CAPA_UNIDADES_APPLE, "icon-image", ICONO_APPLE_POR_ESTADO);
-    map.setLayoutProperty(ID_CAPA_UNIDADES_APPLE, "icon-size", TAM_APPLE);
-    map.setLayoutProperty(ID_CAPA_UNIDADES_APPLE, "icon-rotate", ICON_ROTATE);
-    map.setLayoutProperty(ID_CAPA_UNIDADES_APPLE, "icon-rotation-alignment", "map");
-    map.setLayoutProperty(ID_CAPA_UNIDADES_APPLE, "icon-pitch-alignment", "map");
-    map.setLayoutProperty(ID_CAPA_UNIDADES_APPLE, "icon-anchor", "center");
-    map.setPaintProperty(ID_CAPA_UNIDADES_APPLE, "icon-opacity", 1);
+  const prefs = leerPrefsUnidades();
+  const visLabels = prefs.labels ? "visible" : "none";
+
+  if (map.getLayer(ID_CAPA_UNIDADES_HIT)) {
+    map.setPaintProperty(ID_CAPA_UNIDADES_HIT, "circle-radius", [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      8,
+      14,
+      14,
+      18,
+      18,
+      22,
+    ]);
   }
   if (map.getLayer(ID_CAPA_UNIDADES_LABEL)) {
+    map.setLayoutProperty(ID_CAPA_UNIDADES_LABEL, "visibility", visLabels);
     map.setLayoutProperty(ID_CAPA_UNIDADES_LABEL, "text-size", TAM_LABEL);
     map.setPaintProperty(ID_CAPA_UNIDADES_LABEL, "text-color", "#5eead4");
     map.setPaintProperty(ID_CAPA_UNIDADES_LABEL, "text-opacity", 0.72);
     map.setPaintProperty(ID_CAPA_UNIDADES_LABEL, "text-halo-color", "#041410");
     map.setPaintProperty(ID_CAPA_UNIDADES_LABEL, "text-halo-width", 1.1);
-    map.setLayerZoomRange(ID_CAPA_UNIDADES_LABEL, 16, 24);
+    map.setLayerZoomRange(ID_CAPA_UNIDADES_LABEL, 14, 24);
   }
   if (map.getLayer(ID_CAPA_UNIDADES_LABEL_SEL)) {
+    map.setLayoutProperty(ID_CAPA_UNIDADES_LABEL_SEL, "visibility", visLabels);
     map.setLayoutProperty(ID_CAPA_UNIDADES_LABEL_SEL, "text-offset", [0, 1.65]);
     map.setPaintProperty(ID_CAPA_UNIDADES_LABEL_SEL, "text-color", "#f0fdfa");
     map.setPaintProperty(ID_CAPA_UNIDADES_LABEL_SEL, "text-halo-width", 1.4);
   }
 }
 
+function quitarCapasSpriteLegacy(map: MapLibreMap): void {
+  for (const id of ["unidades-puck", "unidades-apple"]) {
+    if (map.getLayer(id)) map.removeLayer(id);
+  }
+}
+
+/** Aplica prefs (labels, mesh) y refresca unidades 3D. */
+export function aplicarPrefsUnidades(
+  map: MapLibreMap,
+  unidades: UnidadEnMapa[],
+  selectedId: string | null,
+): void {
+  if (!map.getStyle()) return;
+  if (!asegurarCapaUnidades(map)) return;
+  syncLayoutUnidades(map);
+  const source = map.getSource(ID_FUENTE_UNIDADES) as GeoJSONSource | undefined;
+  source?.setData(geojsonUnidades(unidades, selectedId));
+  setDataUnidades3d(map, unidades, selectedId);
+  map.triggerRepaint();
+}
+
 function capasClic(map: MapLibreMap): string[] {
-  return [ID_CAPA_UNIDADES_PUCK, ID_CAPA_UNIDADES_APPLE].filter((id) => map.getLayer(id));
+  return [ID_CAPA_UNIDADES_HIT].filter((id) => map.getLayer(id));
 }
 
 export function asegurarCapaUnidades(map: MapLibreMap): boolean {
-  if (!asegurarIconosUnidad(map)) return false;
+  quitarCapasSpriteLegacy(map);
 
   if (!map.getSource(ID_FUENTE_UNIDADES)) {
     map.addSource(ID_FUENTE_UNIDADES, {
@@ -171,46 +121,15 @@ export function asegurarCapaUnidades(map: MapLibreMap): boolean {
     });
   }
 
-  if (!map.getLayer(ID_CAPA_UNIDADES_PUCK)) {
+  if (!map.getLayer(ID_CAPA_UNIDADES_HIT)) {
     map.addLayer({
-      id: ID_CAPA_UNIDADES_PUCK,
-      type: "symbol",
+      id: ID_CAPA_UNIDADES_HIT,
+      type: "circle",
       source: ID_FUENTE_UNIDADES,
-      filter: ["==", ["get", "seleccionada"], 0],
-      layout: {
-        "icon-image": ICONO_PUCK_POR_ESTADO,
-        "icon-size": TAM_PUCK,
-        "icon-rotate": ICON_ROTATE,
-        "icon-rotation-alignment": "map",
-        "icon-pitch-alignment": "map",
-        "icon-allow-overlap": true,
-        "icon-ignore-placement": true,
-        "icon-anchor": "center",
-      },
       paint: {
-        "icon-opacity": 1,
-      },
-    });
-  }
-
-  if (!map.getLayer(ID_CAPA_UNIDADES_APPLE)) {
-    map.addLayer({
-      id: ID_CAPA_UNIDADES_APPLE,
-      type: "symbol",
-      source: ID_FUENTE_UNIDADES,
-      filter: ["==", ["get", "seleccionada"], 1],
-      layout: {
-        "icon-image": ICONO_APPLE_POR_ESTADO,
-        "icon-size": TAM_APPLE,
-        "icon-rotate": ICON_ROTATE,
-        "icon-rotation-alignment": "map",
-        "icon-pitch-alignment": "map",
-        "icon-anchor": "center",
-        "icon-allow-overlap": true,
-        "icon-ignore-placement": true,
-      },
-      paint: {
-        "icon-opacity": 1,
+        "circle-radius": 18,
+        "circle-opacity": 0,
+        "circle-stroke-width": 0,
       },
     });
   }
@@ -220,7 +139,7 @@ export function asegurarCapaUnidades(map: MapLibreMap): boolean {
       id: ID_CAPA_UNIDADES_LABEL,
       type: "symbol",
       source: ID_FUENTE_UNIDADES,
-      minzoom: 16,
+      minzoom: 14,
       filter: ["==", ["get", "seleccionada"], 0],
       layout: {
         "text-field": ["get", "etiqueta"],
@@ -281,14 +200,12 @@ export function setDataUnidades(
   setDataUnidades3d(map, unidades, selectedId);
 }
 
-export async function montarCapaUnidades(
+export function montarCapaUnidades(
   map: MapLibreMap,
   unidades: UnidadEnMapa[],
   selectedId: string | null,
-): Promise<void> {
-  await prepararIconosUnidad();
+): void {
   if (!map.getStyle()) return;
-  reemplazarIconosUnidad(map);
   if (!asegurarCapaUnidades(map)) return;
   const source = map.getSource(ID_FUENTE_UNIDADES) as GeoJSONSource | undefined;
   source?.setData(geojsonUnidades(unidades, selectedId));

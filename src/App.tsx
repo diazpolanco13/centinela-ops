@@ -12,9 +12,11 @@ import { PlaceholderView } from "./features/placeholder/PlaceholderView";
 
 const importMapaView = () => import("./features/mapa/MapaView");
 const importBrainView = () => import("./features/brain/BrainView");
+const importConfigView = () => import("./features/config/ConfigView");
 
 const MapaView = lazy(() => importMapaView().then((m) => ({ default: m.MapaView })));
 const BrainView = lazy(() => importBrainView().then((m) => ({ default: m.BrainView })));
+const ConfigView = lazy(() => importConfigView().then((m) => ({ default: m.ConfigView })));
 
 function Stub({ titulo }: { titulo: string }) {
   return (
@@ -65,6 +67,14 @@ export function App() {
               <Route path="/unidades" element={<Stub titulo="Unidades" />} />
               <Route path="/reportes" element={<Stub titulo="Reportes de inteligencia" />} />
               <Route path="/alertas" element={<Stub titulo="Alertas" />} />
+              <Route
+                path="/configuracion"
+                element={
+                  <SectionSuspense fallback={<Stub titulo="Configuración" />}>
+                    <ConfigView />
+                  </SectionSuspense>
+                }
+              />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>
