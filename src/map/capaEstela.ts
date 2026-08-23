@@ -11,6 +11,7 @@ import { ID_CAPA_UNIDADES_HIT } from "@/map/capaUnidades";
 import { ID_CAPA_UNIDADES_3D } from "@/map/capaUnidades3d";
 import { ID_CAPA_EDIFICIOS_3D } from "@/map/estiloMapa";
 import type { ParadaEstela } from "@/data/recorridoUnidad";
+import { anchoOverlayIzquierdo } from "@/map/overlayMapa";
 
 export const ID_FUENTE_ESTELA = "estela";
 export const ID_CAPA_ESTELA_HALO = "estela-halo";
@@ -209,8 +210,7 @@ function paddingEstela(): {
   left: number;
   right: number;
 } {
-  const panel = document.querySelector<HTMLElement>("[data-estela-panel]");
-  const left = Math.round((panel?.getBoundingClientRect().width ?? 0) + 28);
+  const left = Math.round(anchoOverlayIzquierdo() + 28);
   return { top: 88, bottom: 140, left: Math.max(56, left), right: 80 };
 }
 

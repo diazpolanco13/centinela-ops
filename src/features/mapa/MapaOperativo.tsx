@@ -51,6 +51,7 @@ import {
   reservarIntroMapa,
 } from "@/lib/introMapa";
 import { AvisoFallbackBaseMapa, type InfoFallbackBaseMapa } from "@/features/mapa/AvisoFallbackBaseMapa";
+import { ControlesMapaIzquierda } from "@/features/mapa/ControlesMapaIzquierda";
 import { PanelEstela } from "@/features/mapa/PanelEstela";
 import { SelectoresVistaMapa } from "@/features/mapa/SelectoresVistaMapa";
 import {
@@ -67,6 +68,7 @@ import {
   reservarCargaEstela,
   seguirCabezaEstela,
 } from "@/map/capaEstela";
+import { anchoOverlayIzquierdo } from "@/map/overlayMapa";
 import { LogoMini } from "@/components/LogoMini";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -101,6 +103,8 @@ export function MapaOperativo() {
   const [unidades, setUnidades] = useState<UnidadEnMapa[]>(UNIDADES_MOCK);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [ventanaMin, setVentanaMin] = useState<VentanaEstelaMin>(VENTANA_ESTELA_DEFECTO_MIN);
+  const [panelVehiculosAbierto, setPanelVehiculosAbierto] = useState(true);
+  const [busquedaAbierta, setBusquedaAbierta] = useState(false);
   const prefsUnidades = usePrefsUnidades();
 
   ventanaMinRef.current = ventanaMin;
@@ -197,8 +201,7 @@ export function MapaOperativo() {
     const map = mapRef.current;
     if (!map || !listoRef.current || introEnCursoRef.current) return;
     if (!Number.isFinite(lngLat[0]) || !Number.isFinite(lngLat[1])) return;
-    const panel = document.querySelector<HTMLElement>("[data-estela-panel]");
-    const left = panel?.getBoundingClientRect().width ?? 0;
+    const left = anchoOverlayIzquierdo(map.getContainer());
     map.flyTo({
       center: lngLat,
       zoom: Math.max(map.getZoom(), 16),
@@ -491,12 +494,39 @@ export function MapaOperativo() {
   return (
     <div className="relative h-full min-h-0 w-full bg-[#0c0f12]">
       <div ref={contenedorRef} className="h-full w-full" />
-      <PanelEstela
-        unidades={unidades}
-        selectedId={selectedId}
-        ventanaMin={ventanaMin}
-        onSeleccionar={seleccionarDesdeLista}
-        onVentana={cambiarVentanaEstela}
+      <ControlesMapaIzquierda
+        panelAbierto={panelVehiculosAbierto}
+        busquedaAbierta={busquedaAbierta}
+        onTogglePanel={() => {
+          setPanelVehiculosAbierto((v) => {
+            if (v) setBusquedaAbierta(false);
+            return !v;
+          });
+        }}
+        onToggleBusqueda={() => {
+          setBusquedaAbierta((v) => {
+            const next = !v;
+            if (next) setPanelVehiculosAbierto(true);
+            return next;
+          });
+        }}
+        panel={
+          panelVehiculosAbierto ? (
+            <PanelEstela
+              unidades={unidades}
+              selectedId={selectedId}
+              ventanaMin={ventanaMin}
+              busquedaAbierta={busquedaAbierta}
+              onSeleccionar={seleccionarDesdeLista}
+              onVentana={cambiarVentanaEstela}
+              onCerrar={() => {
+                setPanelVehiculosAbierto(false);
+                setBusquedaAbierta(false);
+              }}
+              onCerrarBusqueda={() => setBusquedaAbierta(false)}
+            />
+          ) : null
+        }
       />
       {fallback && (
         <AvisoFallbackBaseMapa

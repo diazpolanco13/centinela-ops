@@ -11,7 +11,7 @@ export function MapaSectionSkeleton() {
           backgroundSize: "48px 48px",
         }}
       />
-      <div className="absolute left-3 top-3 z-20 size-10 animate-pulse rounded-xl border border-border/60 bg-card/90" />
+      <div className="absolute left-3 top-3 z-20 h-20 w-10 animate-pulse rounded-xl border border-border/60 bg-card/90" />
       <div className="absolute inset-0 flex items-center justify-center">
         <Skeleton className="size-48 rounded-full" />
       </div>
