@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { Box, Layers2, Map as MapIcon, Satellite } from "lucide-react";
 import type { EstadoUnidad } from "@/data/unidadesMock";
 import {
   COLOR_VEHICULO_DEFECTO,
@@ -8,6 +10,26 @@ import {
   type EstiloMarcaEstado,
   type SiluetaPrefs,
 } from "@/data/preferenciasUnidades";
+import {
+  RANGO_AGRUPAMIENTO,
+  cargarBaseMapa,
+  cargarModo3d,
+  cargarModoGlobo,
+  guardarBaseMapa,
+  guardarModo3d,
+  guardarModoGlobo,
+  guardarPrefsAgrupamiento,
+  restablecerPrefsAgrupamiento,
+  restablecerPrefsVistaMapa,
+  usePrefsAgrupamiento,
+} from "@/data/preferenciasMapa";
+import {
+  BASES_DISPONIBLES,
+  BASE_MAPA_CARTO,
+  BASE_MAPA_DEFECTO,
+  BASE_MAPA_SATELITE,
+  type BaseMapa,
+} from "@/map/estiloMapa";
 import { TIPOS_AUTO } from "@/map/prototiposAutos";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
@@ -64,6 +86,31 @@ function fmt(n: number, digitos = 1): string {
 
 export function ConfigView() {
   const prefs = usePrefsUnidades();
+  const agrup = usePrefsAgrupamiento();
+  const [baseMapa, setBaseMapa] = useState<BaseMapa>(() => cargarBaseMapa() ?? BASE_MAPA_DEFECTO);
+  const [modo3d, setModo3d] = useState(() => cargarModo3d() ?? true);
+  const [modoGlobo, setModoGlobo] = useState(() => cargarModoGlobo() ?? false);
+
+  function cambiarBase(base: BaseMapa) {
+    setBaseMapa(base);
+    guardarBaseMapa(base);
+  }
+
+  function cambiar3d(activo: boolean) {
+    setModo3d(activo);
+    guardarModo3d(activo);
+    if (activo && baseMapa !== BASE_MAPA_CARTO) cambiarBase(BASE_MAPA_CARTO);
+  }
+
+  function restablecerVista() {
+    restablecerPrefsVistaMapa();
+    setBaseMapa(BASE_MAPA_DEFECTO);
+    setModo3d(true);
+    setModoGlobo(false);
+  }
+
+  const enCarto = baseMapa === BASE_MAPA_CARTO;
+  const enSatelite = baseMapa === BASE_MAPA_SATELITE;
 
   return (
     <div className="h-full min-h-0 overflow-y-auto p-4 md:p-6">
@@ -71,14 +118,14 @@ export function ConfigView() {
         <div>
           <h1 className="text-lg font-semibold tracking-tight">Configuración</h1>
           <p className="text-sm text-muted-foreground">
-            Preferencias de la app. Cambios de mapa se ven al volver al Mapa.
+            Ajustes de visualización del mapa. Cambios se ven al volver al Mapa.
           </p>
         </div>
 
-        <Tabs defaultValue="mapa">
+        <Tabs defaultValue="visualizacion">
           <TabsList>
             <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="mapa">Mapa</TabsTrigger>
+            <TabsTrigger value="visualizacion">Visualización</TabsTrigger>
           </TabsList>
 
           <TabsContent value="general" className="mt-4">
@@ -97,7 +144,166 @@ export function ConfigView() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="mapa" className="mt-4">
+          <TabsContent value="visualizacion" className="mt-4 flex flex-col gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Vista del mapa</CardTitle>
+                <CardDescription>Base, 2D/3D y proyección. Antes estaban en el HUD del mapa.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <FieldGroup className="gap-6">
+                  <Field>
+                    <FieldLabel>Modo</FieldLabel>
+                    <ButtonGroup className="w-full max-w-xs" aria-label="Modo 2D o 3D">
+                      <Button
+                        type="button"
+                        variant={modo3d ? "default" : "outline"}
+                        onClick={() => cambiar3d(true)}
+                      >
+                        <Box data-icon="inline-start" />
+                        3D
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={!modo3d ? "default" : "outline"}
+                        onClick={() => cambiar3d(false)}
+                      >
+                        <Layers2 data-icon="inline-start" />
+                        2D
+                      </Button>
+                    </ButtonGroup>
+                    <FieldDescription>3D usa Carto Dark Matter con edificios.</FieldDescription>
+                  </Field>
+
+                  <Field>
+                    <FieldLabel>Capa rápida</FieldLabel>
+                    <ButtonGroup className="w-full max-w-xs" aria-label="Base MAP o SAT">
+                      <Button
+                        type="button"
+                        variant={enCarto ? "default" : "outline"}
+                        onClick={() => cambiarBase(BASE_MAPA_CARTO)}
+                      >
+                        <MapIcon data-icon="inline-start" />
+                        MAP
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={enSatelite ? "default" : "outline"}
+                        onClick={() => cambiarBase(BASE_MAPA_SATELITE)}
+                      >
+                        <Satellite data-icon="inline-start" />
+                        SAT
+                      </Button>
+                    </ButtonGroup>
+                  </Field>
+
+                  <Field>
+                    <FieldLabel>Capa base</FieldLabel>
+                    <Select
+                      value={baseMapa}
+                      onValueChange={(v) => {
+                        if (v) cambiarBase(v as BaseMapa);
+                      }}
+                    >
+                      <SelectTrigger className="w-full max-w-xs">
+                        <SelectValue placeholder="Capa base" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {BASES_DISPONIBLES.map((b) => (
+                          <SelectItem key={b.valor} value={b.valor}>
+                            {b.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+
+                  <Field orientation="horizontal" className="items-center justify-between">
+                    <FieldLabel htmlFor="cfg-globo">Proyección globo</FieldLabel>
+                    <Switch
+                      id="cfg-globo"
+                      checked={modoGlobo}
+                      onCheckedChange={(v) => {
+                        setModoGlobo(v);
+                        guardarModoGlobo(v);
+                      }}
+                    />
+                  </Field>
+
+                  <Field>
+                    <Button type="button" variant="outline" onClick={restablecerVista}>
+                      Restablecer vista
+                    </Button>
+                  </Field>
+                </FieldGroup>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Agrupamiento</CardTitle>
+                <CardDescription>
+                  Junta patrullas cercanas en un círculo con conteo. Clic al grupo acerca hasta separar.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <FieldGroup className="gap-6">
+                  <Field orientation="horizontal" className="items-center justify-between">
+                    <FieldLabel htmlFor="cfg-cluster">Agrupar marcadores</FieldLabel>
+                    <Switch
+                      id="cfg-cluster"
+                      checked={agrup.clustering}
+                      onCheckedChange={(v) => guardarPrefsAgrupamiento({ clustering: v })}
+                    />
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="cfg-cluster-r">
+                      Radio — {fmt(agrup.clusterRadius, 0)} px
+                    </FieldLabel>
+                    <Slider
+                      id="cfg-cluster-r"
+                      min={RANGO_AGRUPAMIENTO.clusterRadius.min}
+                      max={RANGO_AGRUPAMIENTO.clusterRadius.max}
+                      step={5}
+                      disabled={!agrup.clustering}
+                      value={[agrup.clusterRadius]}
+                      onValueChange={([v]) => {
+                        if (v != null) guardarPrefsAgrupamiento({ clusterRadius: v });
+                      }}
+                    />
+                    <FieldDescription>Más radio = grupos más grandes al alejar.</FieldDescription>
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="cfg-cluster-z">
+                      Separar al zoom — {fmt(agrup.clusterMaxZoom, 0)}
+                    </FieldLabel>
+                    <Slider
+                      id="cfg-cluster-z"
+                      min={RANGO_AGRUPAMIENTO.clusterMaxZoom.min}
+                      max={RANGO_AGRUPAMIENTO.clusterMaxZoom.max}
+                      step={1}
+                      disabled={!agrup.clustering}
+                      value={[agrup.clusterMaxZoom]}
+                      onValueChange={([v]) => {
+                        if (v != null) guardarPrefsAgrupamiento({ clusterMaxZoom: v });
+                      }}
+                    />
+                    <FieldDescription>
+                      Por encima de este zoom cada auto queda suelto.
+                    </FieldDescription>
+                  </Field>
+
+                  <Field>
+                    <Button type="button" variant="outline" onClick={() => restablecerPrefsAgrupamiento()}>
+                      Restablecer agrupamiento
+                    </Button>
+                  </Field>
+                </FieldGroup>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle>Vehículos</CardTitle>
@@ -251,7 +457,7 @@ export function ConfigView() {
                 </FieldGroup>
               </CardContent>
             </Card>
-            <p className="mt-3 text-xs text-muted-foreground">Se ven al volver al Mapa.</p>
+            <p className="text-xs text-muted-foreground">Se ven al volver al Mapa.</p>
           </TabsContent>
         </Tabs>
       </div>
