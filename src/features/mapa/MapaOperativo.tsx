@@ -25,6 +25,7 @@ import {
 import {
   aplicarEdificios3d,
   BASE_MAPA_DEFECTO,
+  cancelarAnimacionEdificios3d,
   CAPAS_BASE,
   esBaseEstiloExterno,
   estiloMapaParaBase,
@@ -96,6 +97,7 @@ export function MapaOperativo() {
 
   const [baseMapa, setBaseMapa] = useState<BaseMapa>(() => cargarBaseMapa() ?? BASE_MAPA_DEFECTO);
   const [modo3d, setModo3d] = useState(() => cargarModo3d() ?? true);
+  const modo3dPrevioRef = useRef(modo3d);
   const [modoGlobo, setModoGlobo] = useState(() => cargarModoGlobo() ?? false);
   const [reglaEscala, setReglaEscala] = useState<ReglaEscala | undefined>();
   const [fallback, setFallback] = useState<InfoFallbackBaseMapa | null>(null);
@@ -261,10 +263,12 @@ export function MapaOperativo() {
     if (!map || !listoRef.current) return;
     const base = baseEfectivaRef.current;
     const con3d = modo3dRef.current;
+    const animarToggle3d = modo3dPrevioRef.current !== con3d;
+    modo3dPrevioRef.current = con3d;
 
     if (esBaseEstiloExterno(base)) {
       if (modoEstiloRef.current === "dark-matter") {
-        aplicarEdificios3d(map, con3d);
+        aplicarEdificios3d(map, con3d, { animar: animarToggle3d });
         sincronizarPitch3d(map, con3d);
         aplicarProyeccionGlobo(map, modoGloboRef.current);
         aplicarCapaUnidades(map);
@@ -444,6 +448,7 @@ export function MapaOperativo() {
       window.clearTimeout(timeoutCarto);
       window.clearTimeout(persistirTimer.current);
       ro.disconnect();
+      cancelarAnimacionEdificios3d();
       map.remove();
       mapRef.current = null;
       listoRef.current = false;
