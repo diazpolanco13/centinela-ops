@@ -369,7 +369,8 @@ export function construirEstilo(baseActiva: BaseMapa = "hibrido"): StyleSpecific
     version: 8,
     sources,
     layers,
-    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+    // demotiles no tiene "Open Sans Regular" (404). Mismo stack que Carto Dark Matter.
+    glyphs: "https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf",
   };
 }
 

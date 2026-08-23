@@ -51,7 +51,22 @@ import {
   reservarIntroMapa,
 } from "@/lib/introMapa";
 import { AvisoFallbackBaseMapa, type InfoFallbackBaseMapa } from "@/features/mapa/AvisoFallbackBaseMapa";
+import { PanelEstela } from "@/features/mapa/PanelEstela";
 import { SelectoresVistaMapa } from "@/features/mapa/SelectoresVistaMapa";
+import {
+  VENTANA_ESTELA_DEFECTO_MIN,
+  cargarRecorridoUnidad,
+  type VentanaEstelaMin,
+} from "@/data/recorridoUnidad";
+import {
+  cargaEstelaVigente,
+  destruirEstela,
+  mostrarEstela,
+  ocultarEstela,
+  reinyectarEstela,
+  reservarCargaEstela,
+  seguirCabezaEstela,
+} from "@/map/capaEstela";
 import { LogoMini } from "@/components/LogoMini";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -65,6 +80,7 @@ export function MapaOperativo() {
   const listoRef = useRef(false);
   const unidadesRef = useRef<UnidadEnMapa[]>(UNIDADES_MOCK);
   const selectedIdRef = useRef<string | null>(null);
+  const ventanaMinRef = useRef<VentanaEstelaMin>(VENTANA_ESTELA_DEFECTO_MIN);
   const introEnCursoRef = useRef(false);
   const hacerIntroRef = useRef(false);
   const modoEstiloRef = useRef<"dark-matter" | "raster">("dark-matter");
@@ -82,13 +98,23 @@ export function MapaOperativo() {
   const [fallback, setFallback] = useState<InfoFallbackBaseMapa | null>(null);
   const [gpsActivo, setGpsActivo] = useState(false);
   const [ocultarAvisoTraccar, setOcultarAvisoTraccar] = useState(false);
+  const [unidades, setUnidades] = useState<UnidadEnMapa[]>(UNIDADES_MOCK);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [ventanaMin, setVentanaMin] = useState<VentanaEstelaMin>(VENTANA_ESTELA_DEFECTO_MIN);
   const prefsUnidades = usePrefsUnidades();
 
-  const { error: errorTraccar } = usePosicionesTraccar((unidades) => {
-    unidadesRef.current = unidades;
+  ventanaMinRef.current = ventanaMin;
+
+  const { error: errorTraccar } = usePosicionesTraccar((next) => {
+    unidadesRef.current = next;
+    setUnidades(next);
     const map = mapRef.current;
     if (!map || !listoRef.current) return;
-    setDataUnidades(map, unidades, selectedIdRef.current);
+    setDataUnidades(map, next, selectedIdRef.current);
+    const sel = selectedIdRef.current;
+    if (!sel) return;
+    const u = next.find((x) => x.id === sel);
+    if (u) seguirCabezaEstela(map, sel, u.lngLat);
   });
 
   useEffect(() => {
@@ -142,6 +168,70 @@ export function MapaOperativo() {
 
   function aplicarCapaUnidades(map: maplibregl.Map) {
     void montarCapaUnidades(map, unidadesRef.current, selectedIdRef.current);
+    reinyectarEstela(map);
+  }
+
+  async function cargarEstelaDeUnidad(
+    id: string,
+    ventana: VentanaEstelaMin,
+    opts?: { fit?: boolean },
+  ) {
+    const map = mapRef.current;
+    if (!map || !listoRef.current) return;
+    const unidad = unidadesRef.current.find((u) => u.id === id);
+    const signal = reservarCargaEstela(map, id);
+    try {
+      const rec = await cargarRecorridoUnidad(id, ventana, unidad?.lngLat, signal);
+      if (signal.aborted || !cargaEstelaVigente(map, id) || !mapRef.current) return;
+      const viva = unidadesRef.current.find((u) => u.id === id);
+      mostrarEstela(mapRef.current, rec.coords, rec.paradas, {
+        fit: (opts?.fit ?? true) && !introEnCursoRef.current,
+        cabeza: viva?.lngLat,
+      });
+    } catch {
+      // abort o red: no dibuja
+    }
+  }
+
+  function volarAUnidad(lngLat: [number, number]) {
+    const map = mapRef.current;
+    if (!map || !listoRef.current || introEnCursoRef.current) return;
+    if (!Number.isFinite(lngLat[0]) || !Number.isFinite(lngLat[1])) return;
+    const panel = document.querySelector<HTMLElement>("[data-estela-panel]");
+    const left = panel?.getBoundingClientRect().width ?? 0;
+    map.flyTo({
+      center: lngLat,
+      zoom: Math.max(map.getZoom(), 16),
+      duration: 900,
+      essential: true,
+      offset: [left / 2, 0],
+    });
+  }
+
+  function aplicarSeleccion(id: string | null, opts?: { fitEstela?: boolean }) {
+    selectedIdRef.current = id;
+    setSelectedId(id);
+    const map = mapRef.current;
+    if (!map || !listoRef.current) return;
+    if (id) void cargarEstelaDeUnidad(id, ventanaMinRef.current, { fit: opts?.fitEstela ?? true });
+    else ocultarEstela(map);
+  }
+
+  function seleccionarDesdeLista(id: string) {
+    const unidad = unidadesRef.current.find((u) => u.id === id);
+    if (id !== selectedIdRef.current) {
+      aplicarSeleccion(id, { fitEstela: false });
+      const map = mapRef.current;
+      if (map && listoRef.current) setDataUnidades(map, unidadesRef.current, id);
+    }
+    if (unidad) volarAUnidad(unidad.lngLat);
+  }
+
+  function cambiarVentanaEstela(min: VentanaEstelaMin) {
+    setVentanaMin(min);
+    ventanaMinRef.current = min;
+    const id = selectedIdRef.current;
+    if (id) void cargarEstelaDeUnidad(id, min);
   }
 
   function sincronizarPitch3d(map: maplibregl.Map, con3d: boolean) {
@@ -308,9 +398,7 @@ export function MapaOperativo() {
       quitarClicUnidades = engancharClicUnidades(map, {
         getUnidades: () => unidadesRef.current,
         getSelectedId: () => selectedIdRef.current,
-        setSelectedId: (id) => {
-          selectedIdRef.current = id;
-        },
+        setSelectedId: aplicarSeleccion,
       });
       aplicarBase();
       actualizarEscalaVista();
@@ -341,6 +429,7 @@ export function MapaOperativo() {
       cancelado = true;
       cancelarIntro?.();
       quitarClicUnidades?.();
+      destruirEstela(map);
       window.clearTimeout(timeoutCarto);
       window.clearTimeout(persistirTimer.current);
       ro.disconnect();
@@ -402,6 +491,13 @@ export function MapaOperativo() {
   return (
     <div className="relative h-full min-h-0 w-full bg-[#0c0f12]">
       <div ref={contenedorRef} className="h-full w-full" />
+      <PanelEstela
+        unidades={unidades}
+        selectedId={selectedId}
+        ventanaMin={ventanaMin}
+        onSeleccionar={seleccionarDesdeLista}
+        onVentana={cambiarVentanaEstela}
+      />
       {fallback && (
         <AvisoFallbackBaseMapa
           info={fallback}

@@ -16,6 +16,9 @@ export type TraccarPosition = {
   longitude: number;
   speed: number;
   course?: number;
+  fixTime?: string;
+  deviceTime?: string;
+  serverTime?: string;
   attributes?: {
     motion?: boolean;
     [clave: string]: unknown;
