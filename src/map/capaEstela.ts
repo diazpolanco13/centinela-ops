@@ -9,7 +9,6 @@ import type {
 import { LngLatBounds } from "maplibre-gl";
 import { ID_CAPA_UNIDADES_HIT } from "@/map/capaUnidades";
 import { ID_CAPA_UNIDADES_3D } from "@/map/capaUnidades3d";
-import { ID_CAPA_EDIFICIOS_3D } from "@/map/estiloMapa";
 import type { ParadaEstela } from "@/data/recorridoUnidad";
 import { anchoOverlayIzquierdo } from "@/map/overlayMapa";
 
@@ -24,7 +23,6 @@ const IDS_ESTELA = new Set<string>([...IDS_LINEA, ID_CAPA_ESTELA_STOPS]);
 
 const REVEAL_MS = 520;
 const FADE_MS = 280;
-const DASH_PASO_MS = 110;
 
 const VACIO: FeatureCollection = { type: "FeatureCollection", features: [] };
 
@@ -70,20 +68,6 @@ const GRADIENTE_CORE: ExpressionSpecification = [
   "#FFFFFF",
 ];
 
-/** Marching ants: flujo cola → cabeza. */
-const DASH_SEQ: number[][] = [
-  [0, 3.2, 1.1],
-  [0.4, 3.2, 0.7],
-  [0.8, 3.2, 0.3],
-  [0, 0.4, 1.1, 2.8],
-  [0, 0.8, 1.1, 2.4],
-  [0, 1.2, 1.1, 2],
-  [0, 1.6, 1.1, 1.6],
-  [0, 2, 1.1, 1.2],
-  [0, 2.4, 1.1, 0.8],
-  [0, 2.8, 1.1, 0.4],
-];
-
 /** ~12 m en lat Caracas: commit breadcrumb, no explotar puntos. */
 const APPEND_DEG2 = 0.00011 * 0.00011;
 const MAX_COORDS_LIVE = 1200;
@@ -91,7 +75,6 @@ const MAX_COORDS_LIVE = 1200;
 type MotorEstela = {
   abort: AbortController | null;
   revealRaf: number;
-  dashRaf: number;
   fadeRaf: number;
   deviceId: string | null;
   coords: [number, number][];
@@ -109,7 +92,6 @@ function motorDe(map: MapLibreMap): MotorEstela {
   m = {
     abort: null,
     revealRaf: 0,
-    dashRaf: 0,
     fadeRaf: 0,
     deviceId: null,
     coords: [],
@@ -127,10 +109,8 @@ function cancelarRaf(id: number): void {
 
 function pararAnimaciones(m: MotorEstela): void {
   cancelarRaf(m.revealRaf);
-  cancelarRaf(m.dashRaf);
   cancelarRaf(m.fadeRaf);
   m.revealRaf = 0;
-  m.dashRaf = 0;
   m.fadeRaf = 0;
 }
 
@@ -182,28 +162,6 @@ function setOpacidad(map: MapLibreMap, o: number): void {
   }
 }
 
-function limpiarDash(map: MapLibreMap): void {
-  if (!map.getLayer(ID_CAPA_ESTELA_CORE)) return;
-  map.setPaintProperty(ID_CAPA_ESTELA_CORE, "line-dasharray", undefined as unknown as number[]);
-}
-
-function arrancarDash(map: MapLibreMap, m: MotorEstela): void {
-  cancelarRaf(m.dashRaf);
-  m.dashRaf = 0;
-  if (!map.getLayer(ID_CAPA_ESTELA_CORE)) return;
-  let last = 0;
-  let step = 0;
-  const tick = (now: number) => {
-    m.dashRaf = requestAnimationFrame(tick);
-    if (now - last < DASH_PASO_MS) return;
-    last = now;
-    if (!map.getStyle() || !map.getLayer(ID_CAPA_ESTELA_CORE)) return;
-    map.setPaintProperty(ID_CAPA_ESTELA_CORE, "line-dasharray", DASH_SEQ[step]);
-    step = (step + 1) % DASH_SEQ.length;
-  };
-  m.dashRaf = requestAnimationFrame(tick);
-}
-
 function paddingEstela(): {
   top: number;
   bottom: number;
@@ -236,12 +194,10 @@ function primerSymbolId(map: MapLibreMap): string | undefined {
 }
 
 /**
- * Google/Uber: línea al suelo, edificios la tapan, labels encima.
- * `addLayer(..., edificios-3d)` = antes de extrusión y del primer symbol.
- * Sin 3D (híbrido/OSM): primer symbol o hit.
+ * Encima de edificios/mesh: si va bajo extrusión 3D la calle la tapa
+ * y el dash GPU se come el contexto. Labels quedan arriba.
  */
 function beforeIdEstela(map: MapLibreMap): string | undefined {
-  if (map.getLayer(ID_CAPA_EDIFICIOS_3D)) return ID_CAPA_EDIFICIOS_3D;
   return (
     primerSymbolId(map) ??
     (map.getLayer(ID_CAPA_UNIDADES_HIT) ? ID_CAPA_UNIDADES_HIT : undefined) ??
@@ -370,7 +326,6 @@ function revelar(
     }
     m.revealRaf = 0;
     pintar(map, m.coords, m.paradas);
-    arrancarDash(map, m);
   };
   m.revealRaf = requestAnimationFrame(tick);
 }
@@ -444,7 +399,6 @@ export function mostrarEstela(
   asegurarCapaEstela(map);
   const m = motorDe(map);
   pararAnimaciones(m);
-  limpiarDash(map);
   setOpacidad(map, 1);
   m.coords = coords;
   m.paradas = paradas;
@@ -485,7 +439,6 @@ export function ocultarEstela(map: MapLibreMap): void {
     cur.fadeRaf = 0;
     setDataFuente(map, VACIO);
     setOpacidad(map, 1);
-    limpiarDash(map);
   };
   motorDe(map).fadeRaf = requestAnimationFrame(tick);
 }
@@ -501,7 +454,6 @@ export function reinyectarEstela(map: MapLibreMap): void {
   }
   setOpacidad(map, 1);
   pintar(map, m.coords, m.paradas);
-  arrancarDash(map, m);
 }
 
 export function reservarCargaEstela(map: MapLibreMap, deviceId: string): AbortSignal {

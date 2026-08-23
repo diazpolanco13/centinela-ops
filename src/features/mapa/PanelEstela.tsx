@@ -4,13 +4,17 @@ import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { IconoCategoriaUnidad } from "@/features/mapa/IconoCategoriaUnidad";
 import { etiquetaCorta } from "@/data/traccar";
 import {
   ETIQUETA_VENTANA,
   VENTANAS_ESTELA_MIN,
   type VentanaEstelaMin,
 } from "@/data/recorridoUnidad";
+import { bateriaCritica, textoFilaUnidad } from "@/data/telemetriaUnidad";
 import { COLOR_ESTADO, type UnidadEnMapa } from "@/data/unidadesMock";
+import { useAhora } from "@/hooks/useAhora";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -46,6 +50,7 @@ export function PanelEstela({
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [consulta, setConsulta] = useState("");
+  const ahora = useAhora();
 
   useEffect(() => {
     if (busquedaAbierta) {
@@ -162,17 +167,45 @@ export function PanelEstela({
                     aria-pressed={sel}
                     onClick={() => onSeleccionar(u.id)}
                     className={cn(
-                      "h-8 w-full justify-start gap-2 px-2 font-normal",
+                      "h-auto min-h-10 w-full items-start justify-start gap-2 px-2 py-1.5 font-normal",
                       sel && "bg-cyan-400/20 text-cyan-50 hover:bg-cyan-400/25",
                     )}
                   >
                     <span
-                      className="size-1.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: COLOR_ESTADO[u.estado] }}
+                      className="mt-0.5 flex size-6 shrink-0 items-center justify-center"
+                      style={{ color: COLOR_ESTADO[u.estado] }}
                       aria-hidden
-                    />
-                    <span className="truncate font-mono text-[11px]">{etiquetaCorta(u.nombre)}</span>
-                    <span className="truncate text-[11px] text-muted-foreground">{u.nombre}</span>
+                    >
+                      <IconoCategoriaUnidad
+                        category={u.telemetria?.category}
+                        className="size-3.5"
+                      />
+                    </span>
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate font-mono text-[11px]">{etiquetaCorta(u.nombre)}</span>
+                        <span className="truncate text-[11px] text-muted-foreground">{u.nombre}</span>
+                      </span>
+                      <span
+                        className={cn(
+                          "block truncate text-[10px]",
+                          sel ? "text-cyan-100/80" : "text-muted-foreground",
+                        )}
+                      >
+                        {textoFilaUnidad(u, ahora)}
+                        {u.telemetria?.ignition === true ? " · motor" : ""}
+                        {u.telemetria?.ignition === false ? " · apagado" : ""}
+                      </span>
+                    </span>
+                    {u.telemetria?.alarm ? (
+                      <Badge variant="destructive" className="shrink-0">
+                        !
+                      </Badge>
+                    ) : bateriaCritica(u.telemetria?.batteryV) ? (
+                      <Badge variant="outline" className="shrink-0 text-amber-400">
+                        bat
+                      </Badge>
+                    ) : null}
                   </Button>
                 </li>
               );

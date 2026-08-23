@@ -52,6 +52,7 @@ import {
 } from "@/lib/introMapa";
 import { AvisoFallbackBaseMapa, type InfoFallbackBaseMapa } from "@/features/mapa/AvisoFallbackBaseMapa";
 import { ControlesMapaIzquierda } from "@/features/mapa/ControlesMapaIzquierda";
+import { FichaVehiculo } from "@/features/mapa/FichaVehiculo";
 import { PanelEstela } from "@/features/mapa/PanelEstela";
 import { SelectoresVistaMapa } from "@/features/mapa/SelectoresVistaMapa";
 import {
@@ -185,15 +186,22 @@ export function MapaOperativo() {
     const unidad = unidadesRef.current.find((u) => u.id === id);
     const signal = reservarCargaEstela(map, id);
     try {
-      const rec = await cargarRecorridoUnidad(id, ventana, unidad?.lngLat, signal);
+      const rec = await cargarRecorridoUnidad(
+        id,
+        ventana,
+        unidad?.lngLat,
+        signal,
+        unidad?.telemetria?.lastFixMs,
+      );
       if (signal.aborted || !cargaEstelaVigente(map, id) || !mapRef.current) return;
       const viva = unidadesRef.current.find((u) => u.id === id);
       mostrarEstela(mapRef.current, rec.coords, rec.paradas, {
         fit: (opts?.fit ?? true) && !introEnCursoRef.current,
         cabeza: viva?.lngLat,
       });
-    } catch {
-      // abort o red: no dibuja
+    } catch (err) {
+      if (signal.aborted) return;
+      console.warn("estela: no se pudo cargar el recorrido", err);
     }
   }
 
@@ -478,6 +486,8 @@ export function MapaOperativo() {
     map.flyTo({ center: CARACAS_CENTRO, zoom: 12, duration: 1200, essential: true });
   }
 
+  const unidadFicha = selectedId ? unidades.find((u) => u.id === selectedId) : undefined;
+
   function gps() {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition((pos) => {
@@ -616,6 +626,17 @@ export function MapaOperativo() {
           </Tooltip>
         </ButtonGroup>
       </div>
+      {unidadFicha && (
+        <FichaVehiculo
+          key={unidadFicha.id}
+          unidad={unidadFicha}
+          onCerrar={() => {
+            aplicarSeleccion(null);
+            const map = mapRef.current;
+            if (map && listoRef.current) setDataUnidades(map, unidadesRef.current, null);
+          }}
+        />
+      )}
       <LogoMini position="bottom-left" onClick={centrarCaracas} />
     </div>
   );

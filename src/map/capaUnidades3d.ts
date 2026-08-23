@@ -181,6 +181,7 @@ class CapaUnidades3d implements CustomLayerInterface {
 
     renderer.resetState();
     renderer.render(scene, camera);
+    renderer.resetState();
   }
 
   /** Pulso fuera de `render`: `triggerRepaint` adentro = loop 60 fps + warning Chrome. */
@@ -193,9 +194,9 @@ class CapaUnidades3d implements CustomLayerInterface {
         return;
       }
       map.triggerRepaint();
-      this.pulsoTimer = window.setTimeout(tick, 80);
+      this.pulsoTimer = window.setTimeout(tick, 200);
     };
-    this.pulsoTimer = window.setTimeout(tick, 80);
+    this.pulsoTimer = window.setTimeout(tick, 200);
   }
 
   private pararPulso(): void {

@@ -1,4 +1,4 @@
-import type { EstadoUnidad, UnidadEnMapa } from "@/data/unidadesMock";
+import type { EstadoUnidad, TelemetriaUnidad, UnidadEnMapa } from "@/data/unidadesMock";
 
 export type DeviceStatus = "online" | "offline" | "unknown";
 
@@ -7,6 +7,12 @@ export type TraccarDevice = {
   name: string;
   uniqueId: string;
   status: DeviceStatus;
+  lastUpdate?: string;
+  category?: string;
+  attributes?: {
+    deviceImage?: string;
+    [clave: string]: unknown;
+  };
 };
 
 export type TraccarPosition = {
@@ -21,8 +27,12 @@ export type TraccarPosition = {
   serverTime?: string;
   attributes?: {
     motion?: boolean;
+    ignition?: boolean;
+    battery?: number;
+    alarm?: string;
     [clave: string]: unknown;
   };
+  geofenceIds?: number[];
 };
 
 const SPEED_DETENIDA_KN = 1;
@@ -41,9 +51,13 @@ export function estadoUnidad(
     return "sin_senal";
   }
   const motion = position?.attributes?.motion;
+  const speed = position?.speed ?? 0;
+  const moviendo = motion === true || (motion !== false && speed >= SPEED_DETENIDA_KN);
+  const enZona = Array.isArray(position?.geofenceIds) && position.geofenceIds.length > 0;
+  if (!moviendo && enZona) return "en_zona";
   if (motion === false) return "detenida";
   if (motion === true) return "en_ruta";
-  if ((position?.speed ?? 0) < SPEED_DETENIDA_KN) return "detenida";
+  if (speed < SPEED_DETENIDA_KN) return "detenida";
   return "en_ruta";
 }
 
@@ -60,6 +74,44 @@ function numeroAtributo(attrs: TraccarPosition["attributes"], clave: string): nu
 
 /** Último rumbo real. GPS detenido suele mandar course=0 (norte falso). */
 const ultimoRumbo = new Map<number, number>();
+
+/** Último instante en movimiento (sesión). No es lastUpdate. */
+const ultimoMovimiento = new Map<number, number>();
+
+function msIso(raw: string | undefined): number | undefined {
+  if (!raw) return undefined;
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? t : undefined;
+}
+
+function boolAttr(attrs: TraccarPosition["attributes"], clave: string): boolean | null {
+  const v = attrs?.[clave];
+  return typeof v === "boolean" ? v : null;
+}
+
+function textoAttr(attrs: TraccarPosition["attributes"], clave: string): string | undefined {
+  const v = attrs?.[clave];
+  return typeof v === "string" && v.trim() ? v.trim() : undefined;
+}
+
+export function urlFotoDispositivo(uniqueId: string | undefined, deviceImage: unknown): string | undefined {
+  if (!uniqueId || typeof deviceImage !== "string") return undefined;
+  const file = deviceImage.trim();
+  if (!file) return undefined;
+  return `/api/media/${encodeURIComponent(uniqueId)}/${encodeURIComponent(file)}`;
+}
+
+function registrarMovimiento(deviceId: number, position: TraccarPosition): number | undefined {
+  const motion = position.attributes?.motion;
+  const speed = position.speed ?? 0;
+  const moviendo = motion === true || (motion !== false && speed >= SPEED_DETENIDA_KN);
+  const when = msIso(position.fixTime) ?? msIso(position.deviceTime) ?? Date.now();
+  if (moviendo) {
+    ultimoMovimiento.set(deviceId, when);
+    return when;
+  }
+  return ultimoMovimiento.get(deviceId);
+}
 
 export function courseDePosicion(position: TraccarPosition): number {
   const raw =
@@ -96,12 +148,27 @@ export function fusionarUnidades(
   for (const device of devices.values()) {
     const position = positions.get(device.id);
     if (!position || !coordsValidas(position.latitude, position.longitude)) continue;
+    const lastMotionMs = registrarMovimiento(device.id, position);
+    const attrs = position.attributes;
+    const telemetria: TelemetriaUnidad = {
+      speedKn: position.speed ?? 0,
+      motion: boolAttr(attrs, "motion"),
+      ignition: boolAttr(attrs, "ignition"),
+      batteryV: numeroAtributo(attrs, "battery"),
+      lastFixMs: msIso(position.fixTime) ?? msIso(position.deviceTime),
+      lastUpdateMs: msIso(device.lastUpdate),
+      lastMotionMs,
+      category: device.category,
+      alarm: textoAttr(attrs, "alarm"),
+      fotoUrl: urlFotoDispositivo(device.uniqueId, device.attributes?.deviceImage),
+    };
     out.push({
       id: String(device.id),
       nombre: device.name || device.uniqueId || `#${device.id}`,
       estado: estadoUnidad(device, position),
       lngLat: [position.longitude, position.latitude],
       course: courseDePosicion(position),
+      telemetria,
     });
   }
   return out;

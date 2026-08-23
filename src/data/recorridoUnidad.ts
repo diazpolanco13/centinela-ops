@@ -146,12 +146,38 @@ async function fetchHistorico(
     to: to.toISOString(),
   });
   const res = await fetch(`/api/positions?${q}`, { credentials: "include", signal });
-  if (!res.ok) return [];
+  if (!res.ok) {
+    console.warn("estela: histórico Traccar", res.status, res.statusText);
+    return [];
+  }
   const ct = res.headers.get("content-type") ?? "";
-  if (!ct.includes("json")) return [];
+  if (!ct.includes("json")) {
+    console.warn("estela: histórico no-JSON");
+    return [];
+  }
   const raw = (await res.json()) as TraccarPosition[];
   if (!Array.isArray(raw)) return [];
   return pingsDesdeApi(raw);
+}
+
+/**
+ * Traccar filtra `/positions` por `fixTime`, no por `serverTime`.
+ * Si el reloj del GPS va atrasado (días), `now-1h` sale vacío y no hay estela.
+ * Ancla al último fix conocido cuando queda fuera de la ventana.
+ */
+export function ventanaHistorico(
+  ventanaMin: VentanaEstelaMin,
+  anclaMs?: number,
+): { from: Date; to: Date } {
+  const ahora = Date.now();
+  const span = ventanaMin * 60_000;
+  const gpsAtrasado =
+    typeof anclaMs === "number" && Number.isFinite(anclaMs) && anclaMs < ahora - span;
+  const fin = gpsAtrasado ? (anclaMs as number) : ahora;
+  return {
+    from: new Date(fin - span),
+    to: new Date(gpsAtrasado ? fin + 60_000 : ahora),
+  };
 }
 
 export async function cargarRecorridoUnidad(
@@ -159,9 +185,9 @@ export async function cargarRecorridoUnidad(
   ventanaMin: VentanaEstelaMin,
   lngLatActual: [number, number] | undefined,
   signal?: AbortSignal,
+  anclaMs?: number,
 ): Promise<RecorridoUnidad> {
-  const to = new Date();
-  const from = new Date(to.getTime() - ventanaMin * 60_000);
+  const { from, to } = ventanaHistorico(ventanaMin, anclaMs);
   const numericId = Number(deviceId);
   if (!Number.isFinite(numericId)) {
     if (!lngLatActual) return { coords: [], paradas: [] };
