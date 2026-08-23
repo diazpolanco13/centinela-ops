@@ -1,12 +1,16 @@
-import type { FeatureCollection } from "geojson";
+import type { FeatureCollection, Point } from "geojson";
 import type {
   ExpressionSpecification,
+  FilterSpecification,
   GeoJSONSource,
+  GeoJSONSourceSpecification,
   Map as MapLibreMap,
   MapMouseEvent,
+  MapSourceDataEvent,
 } from "maplibre-gl";
 import { etiquetaCorta } from "@/data/traccar";
 import { COLOR_ESTADO, type UnidadEnMapa } from "@/data/unidadesMock";
+import { leerPrefsAgrupamiento } from "@/data/preferenciasMapa";
 import { leerPrefsUnidades } from "@/data/preferenciasUnidades";
 import { montarCapaUnidades3d, setDataUnidades3d, ID_CAPA_UNIDADES_3D } from "@/map/capaUnidades3d";
 
@@ -17,8 +21,33 @@ export const ID_FUENTE_UNIDADES = "unidades";
 export const ID_CAPA_UNIDADES_HIT = "unidades-hit";
 export const ID_CAPA_UNIDADES_LABEL = "unidades-label";
 export const ID_CAPA_UNIDADES_LABEL_SEL = "unidades-label-sel";
+export const ID_CAPA_CLUSTERS = "unidades-clusters";
+export const ID_CAPA_CLUSTER_COUNT = "unidades-cluster-count";
 
 const VACIO: FeatureCollection = { type: "FeatureCollection", features: [] };
+
+const FILTRO_HOJA: FilterSpecification = ["!", ["has", "point_count"]];
+const FILTRO_CLUSTER: FilterSpecification = ["has", "point_count"];
+const FILTRO_LABEL: FilterSpecification = [
+  "all",
+  ["!", ["has", "point_count"]],
+  ["==", ["get", "seleccionada"], 0],
+];
+const FILTRO_LABEL_SEL: FilterSpecification = [
+  "all",
+  ["!", ["has", "point_count"]],
+  ["==", ["get", "seleccionada"], 1],
+];
+
+const CAPAS_FUENTE = [
+  ID_CAPA_CLUSTER_COUNT,
+  ID_CAPA_CLUSTERS,
+  ID_CAPA_UNIDADES_LABEL_SEL,
+  ID_CAPA_UNIDADES_LABEL,
+  ID_CAPA_UNIDADES_HIT,
+] as const;
+
+const claveFuentePorMapa = new WeakMap<MapLibreMap, string>();
 
 export function geojsonUnidades(
   unidades: UnidadEnMapa[],
@@ -28,7 +57,6 @@ export function geojsonUnidades(
     type: "FeatureCollection",
     features: unidades.map((u) => ({
       type: "Feature" as const,
-      id: u.id,
       geometry: { type: "Point" as const, coordinates: u.lngLat },
       properties: {
         id: u.id,
@@ -52,11 +80,96 @@ const TAM_LABEL: ExpressionSpecification = [
   10,
 ];
 
+function claveFuenteAgrupamiento(): string {
+  const prefs = leerPrefsAgrupamiento();
+  if (!prefs.clustering) return "off";
+  return `on:${prefs.clusterRadius}:${prefs.clusterMaxZoom}`;
+}
+
+function specFuenteUnidades(): GeoJSONSourceSpecification {
+  const prefs = leerPrefsAgrupamiento();
+  return {
+    type: "geojson",
+    data: VACIO,
+    generateId: true,
+    ...(prefs.clustering
+      ? {
+          cluster: true,
+          clusterRadius: prefs.clusterRadius,
+          clusterMaxZoom: prefs.clusterMaxZoom,
+        }
+      : {}),
+  };
+}
+
+function quitarCapasYFuenteUnidades(map: MapLibreMap): void {
+  for (const id of CAPAS_FUENTE) {
+    if (map.getLayer(id)) map.removeLayer(id);
+  }
+  if (map.getSource(ID_FUENTE_UNIDADES)) map.removeSource(ID_FUENTE_UNIDADES);
+  claveFuentePorMapa.delete(map);
+}
+
+function asegurarFuenteUnidades(map: MapLibreMap): void {
+  const clave = claveFuenteAgrupamiento();
+  if (map.getSource(ID_FUENTE_UNIDADES) && claveFuentePorMapa.get(map) === clave) return;
+  if (map.getSource(ID_FUENTE_UNIDADES)) quitarCapasYFuenteUnidades(map);
+  map.addSource(ID_FUENTE_UNIDADES, specFuenteUnidades());
+  claveFuentePorMapa.set(map, clave);
+}
+
+function montarCapasCluster(map: MapLibreMap): void {
+  if (!leerPrefsAgrupamiento().clustering) return;
+  if (!map.getLayer(ID_CAPA_CLUSTERS)) {
+    map.addLayer({
+      id: ID_CAPA_CLUSTERS,
+      type: "circle",
+      source: ID_FUENTE_UNIDADES,
+      filter: FILTRO_CLUSTER,
+      paint: {
+        "circle-color": [
+          "step",
+          ["get", "point_count"],
+          "#14b8a6",
+          8,
+          "#0d9488",
+          20,
+          "#0f766e",
+        ],
+        "circle-radius": ["step", ["get", "point_count"], 16, 8, 20, 20, 26],
+        "circle-opacity": 0.92,
+        "circle-stroke-width": 2,
+        "circle-stroke-color": "#042f2e",
+      },
+    });
+  }
+  if (!map.getLayer(ID_CAPA_CLUSTER_COUNT)) {
+    map.addLayer({
+      id: ID_CAPA_CLUSTER_COUNT,
+      type: "symbol",
+      source: ID_FUENTE_UNIDADES,
+      filter: FILTRO_CLUSTER,
+      layout: {
+        "text-field": ["get", "point_count_abbreviated"],
+        "text-font": ["Open Sans Regular"],
+        "text-size": 12,
+        "text-allow-overlap": true,
+      },
+      paint: {
+        "text-color": "#f0fdfa",
+        "text-halo-color": "#042f2e",
+        "text-halo-width": 1.4,
+      },
+    });
+  }
+}
+
 function syncLayoutUnidades(map: MapLibreMap): void {
   const prefs = leerPrefsUnidades();
   const visLabels = prefs.labels ? "visible" : "none";
 
   if (map.getLayer(ID_CAPA_UNIDADES_HIT)) {
+    map.setFilter(ID_CAPA_UNIDADES_HIT, FILTRO_HOJA);
     map.setPaintProperty(ID_CAPA_UNIDADES_HIT, "circle-radius", [
       "interpolate",
       ["linear"],
@@ -70,6 +183,7 @@ function syncLayoutUnidades(map: MapLibreMap): void {
     ]);
   }
   if (map.getLayer(ID_CAPA_UNIDADES_LABEL)) {
+    map.setFilter(ID_CAPA_UNIDADES_LABEL, FILTRO_LABEL);
     map.setLayoutProperty(ID_CAPA_UNIDADES_LABEL, "visibility", visLabels);
     map.setLayoutProperty(ID_CAPA_UNIDADES_LABEL, "text-size", TAM_LABEL);
     map.setPaintProperty(ID_CAPA_UNIDADES_LABEL, "text-color", "#f0fdfa");
@@ -79,6 +193,7 @@ function syncLayoutUnidades(map: MapLibreMap): void {
     map.setLayerZoomRange(ID_CAPA_UNIDADES_LABEL, 14, 24);
   }
   if (map.getLayer(ID_CAPA_UNIDADES_LABEL_SEL)) {
+    map.setFilter(ID_CAPA_UNIDADES_LABEL_SEL, FILTRO_LABEL_SEL);
     map.setLayoutProperty(ID_CAPA_UNIDADES_LABEL_SEL, "visibility", visLabels);
     map.setLayoutProperty(ID_CAPA_UNIDADES_LABEL_SEL, "text-offset", [0, 1.65]);
     map.setPaintProperty(ID_CAPA_UNIDADES_LABEL_SEL, "text-color", "#f0fdfa");
@@ -93,7 +208,49 @@ function quitarCapasSpriteLegacy(map: MapLibreMap): void {
   }
 }
 
-/** Aplica prefs (labels, mesh) y refresca unidades 3D. */
+function idsHojasVisibles(map: MapLibreMap): Set<string> | null {
+  if (!map.getSource(ID_FUENTE_UNIDADES)) return null;
+  const feats = map.querySourceFeatures(ID_FUENTE_UNIDADES);
+  if (feats.length === 0) return null;
+  const ids = new Set<string>();
+  for (const f of feats) {
+    if (f.properties && "point_count" in f.properties) continue;
+    const id = f.properties?.id;
+    if (id != null) ids.add(String(id));
+  }
+  return ids;
+}
+
+/** Autos 3D solo si no están dentro de un cluster (o clustering off). */
+export function sincronizarUnidadesVisibles3d(
+  map: MapLibreMap,
+  unidades: UnidadEnMapa[],
+  selectedId: string | null,
+): void {
+  if (!leerPrefsAgrupamiento().clustering) {
+    setDataUnidades3d(map, unidades, selectedId);
+    return;
+  }
+  const ids = idsHojasVisibles(map);
+  if (!ids) return;
+  setDataUnidades3d(
+    map,
+    unidades.filter((u) => ids.has(u.id)),
+    selectedId,
+  );
+}
+
+function publicarUnidades(
+  map: MapLibreMap,
+  unidades: UnidadEnMapa[],
+  selectedId: string | null,
+): void {
+  const source = map.getSource(ID_FUENTE_UNIDADES) as GeoJSONSource | undefined;
+  source?.setData(geojsonUnidades(unidades, selectedId));
+  sincronizarUnidadesVisibles3d(map, unidades, selectedId);
+}
+
+/** Aplica prefs (labels, cluster, mesh) y refresca unidades 3D. */
 export function aplicarPrefsUnidades(
   map: MapLibreMap,
   unidades: UnidadEnMapa[],
@@ -102,31 +259,56 @@ export function aplicarPrefsUnidades(
   if (!map.getStyle()) return;
   if (!asegurarCapaUnidades(map)) return;
   syncLayoutUnidades(map);
-  const source = map.getSource(ID_FUENTE_UNIDADES) as GeoJSONSource | undefined;
-  source?.setData(geojsonUnidades(unidades, selectedId));
-  setDataUnidades3d(map, unidades, selectedId);
+  publicarUnidades(map, unidades, selectedId);
   map.triggerRepaint();
 }
 
-function capasClic(map: MapLibreMap): string[] {
+function capasClicUnidad(map: MapLibreMap): string[] {
   return [ID_CAPA_UNIDADES_HIT].filter((id) => map.getLayer(id));
+}
+
+function capasClicCluster(map: MapLibreMap): string[] {
+  return [ID_CAPA_CLUSTERS].filter((id) => map.getLayer(id));
+}
+
+function capasClicPuntero(map: MapLibreMap): string[] {
+  return [...capasClicCluster(map), ...capasClicUnidad(map)];
+}
+
+async function expandirCluster(map: MapLibreMap, e: MapMouseEvent): Promise<boolean> {
+  const layers = capasClicCluster(map);
+  if (!layers.length) return false;
+  const hits = map.queryRenderedFeatures(e.point, { layers });
+  const feat = hits[0];
+  if (!feat || feat.properties?.cluster_id == null) return false;
+  const source = map.getSource(ID_FUENTE_UNIDADES) as GeoJSONSource | undefined;
+  if (!source || typeof source.getClusterExpansionZoom !== "function") return false;
+  const geom = feat.geometry as Point | undefined;
+  if (!geom || geom.type !== "Point") return false;
+  try {
+    const zoom = await source.getClusterExpansionZoom(feat.properties.cluster_id as number);
+    map.easeTo({
+      center: [geom.coordinates[0], geom.coordinates[1]],
+      zoom,
+      duration: 500,
+      essential: true,
+    });
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 export function asegurarCapaUnidades(map: MapLibreMap): boolean {
   quitarCapasSpriteLegacy(map);
-
-  if (!map.getSource(ID_FUENTE_UNIDADES)) {
-    map.addSource(ID_FUENTE_UNIDADES, {
-      type: "geojson",
-      data: VACIO,
-    });
-  }
+  asegurarFuenteUnidades(map);
 
   if (!map.getLayer(ID_CAPA_UNIDADES_HIT)) {
     map.addLayer({
       id: ID_CAPA_UNIDADES_HIT,
       type: "circle",
       source: ID_FUENTE_UNIDADES,
+      filter: FILTRO_HOJA,
       paint: {
         "circle-radius": 18,
         "circle-opacity": 0,
@@ -135,6 +317,8 @@ export function asegurarCapaUnidades(map: MapLibreMap): boolean {
     });
   }
 
+  montarCapasCluster(map);
+
   try {
     if (!map.getLayer(ID_CAPA_UNIDADES_LABEL)) {
       map.addLayer({
@@ -142,7 +326,7 @@ export function asegurarCapaUnidades(map: MapLibreMap): boolean {
         type: "symbol",
         source: ID_FUENTE_UNIDADES,
         minzoom: 14,
-        filter: ["==", ["get", "seleccionada"], 0],
+        filter: FILTRO_LABEL,
         layout: {
           "text-field": ["get", "etiqueta"],
           "text-size": TAM_LABEL,
@@ -166,7 +350,7 @@ export function asegurarCapaUnidades(map: MapLibreMap): boolean {
         id: ID_CAPA_UNIDADES_LABEL_SEL,
         type: "symbol",
         source: ID_FUENTE_UNIDADES,
-        filter: ["==", ["get", "seleccionada"], 1],
+        filter: FILTRO_LABEL_SEL,
         layout: {
           "text-field": ["get", "nombre"],
           "text-size": 11,
@@ -202,9 +386,7 @@ export function setDataUnidades(
     return;
   }
   asegurarCapaUnidades(map);
-  const source = map.getSource(ID_FUENTE_UNIDADES) as GeoJSONSource | undefined;
-  source?.setData(geojsonUnidades(unidades, selectedId));
-  setDataUnidades3d(map, unidades, selectedId);
+  publicarUnidades(map, unidades, selectedId);
 }
 
 export function montarCapaUnidades(
@@ -213,15 +395,13 @@ export function montarCapaUnidades(
   selectedId: string | null,
 ): void {
   if (!map.getStyle()) return;
-  // Hit + source primero; mesh 3D siempre (aunque labels fallen).
-  if (!map.getSource(ID_FUENTE_UNIDADES)) {
-    map.addSource(ID_FUENTE_UNIDADES, { type: "geojson", data: VACIO });
-  }
+  asegurarFuenteUnidades(map);
   if (!map.getLayer(ID_CAPA_UNIDADES_HIT)) {
     map.addLayer({
       id: ID_CAPA_UNIDADES_HIT,
       type: "circle",
       source: ID_FUENTE_UNIDADES,
+      filter: FILTRO_HOJA,
       paint: {
         "circle-radius": 18,
         "circle-opacity": 0,
@@ -231,11 +411,22 @@ export function montarCapaUnidades(
   }
   const source = map.getSource(ID_FUENTE_UNIDADES) as GeoJSONSource | undefined;
   source?.setData(geojsonUnidades(unidades, selectedId));
-  montarCapaUnidades3d(map, unidades, selectedId);
+  // Con clustering: mesh vacío hasta sourcedata (evita flash de todos los autos).
+  montarCapaUnidades3d(
+    map,
+    leerPrefsAgrupamiento().clustering ? [] : unidades,
+    selectedId,
+  );
   asegurarCapaUnidades(map);
-  // Labels pueden quedar encima del mesh: reordenar.
+  sincronizarUnidadesVisibles3d(map, unidades, selectedId);
   if (map.getLayer(ID_CAPA_UNIDADES_3D) && map.getLayer(ID_CAPA_UNIDADES_LABEL)) {
     map.moveLayer(ID_CAPA_UNIDADES_3D, ID_CAPA_UNIDADES_LABEL);
+  }
+  if (map.getLayer(ID_CAPA_CLUSTERS) && map.getLayer(ID_CAPA_UNIDADES_LABEL)) {
+    map.moveLayer(ID_CAPA_CLUSTERS, ID_CAPA_UNIDADES_LABEL);
+  }
+  if (map.getLayer(ID_CAPA_CLUSTER_COUNT) && map.getLayer(ID_CAPA_UNIDADES_LABEL)) {
+    map.moveLayer(ID_CAPA_CLUSTER_COUNT, ID_CAPA_UNIDADES_LABEL);
   }
   map.triggerRepaint();
 }
@@ -249,14 +440,15 @@ export function engancharClicUnidades(
   },
 ): () => void {
   const onClick = (e: MapMouseEvent) => {
-    const layers = capasClic(map);
-    const hits = layers.length
-      ? map.queryRenderedFeatures(e.point, { layers })
-      : [];
-    const id = (hits[0]?.properties?.id as string | undefined) ?? null;
-    if (id === opts.getSelectedId()) return;
-    opts.setSelectedId(id);
-    setDataUnidades(map, opts.getUnidades(), id);
+    void expandirCluster(map, e).then((expandio) => {
+      if (expandio) return;
+      const layers = capasClicUnidad(map);
+      const hits = layers.length ? map.queryRenderedFeatures(e.point, { layers }) : [];
+      const id = (hits[0]?.properties?.id as string | undefined) ?? null;
+      if (id === opts.getSelectedId()) return;
+      opts.setSelectedId(id);
+      setDataUnidades(map, opts.getUnidades(), id);
+    });
   };
 
   let moveRaf = 0;
@@ -266,19 +458,40 @@ export function engancharClicUnidades(
     if (moveRaf) return;
     moveRaf = requestAnimationFrame(() => {
       moveRaf = 0;
-      const layers = capasClic(map);
+      const layers = capasClicPuntero(map);
       if (!layers.length || !movePoint) return;
       const hits = map.queryRenderedFeatures(movePoint, { layers });
       map.getCanvas().style.cursor = hits.length ? "pointer" : "";
     });
   };
 
+  let syncRaf = 0;
+  const programarSync3d = () => {
+    if (syncRaf) return;
+    syncRaf = requestAnimationFrame(() => {
+      syncRaf = 0;
+      sincronizarUnidadesVisibles3d(map, opts.getUnidades(), opts.getSelectedId());
+    });
+  };
+
+  const onSourceData = (e: MapSourceDataEvent) => {
+    if (e.sourceId !== ID_FUENTE_UNIDADES || !e.isSourceLoaded) return;
+    programarSync3d();
+  };
+
   map.on("click", onClick);
   map.on("mousemove", onMove);
+  map.on("sourcedata", onSourceData);
+  map.on("zoomend", programarSync3d);
+  map.on("moveend", programarSync3d);
   return () => {
     map.off("click", onClick);
     map.off("mousemove", onMove);
+    map.off("sourcedata", onSourceData);
+    map.off("zoomend", programarSync3d);
+    map.off("moveend", programarSync3d);
     if (moveRaf) cancelAnimationFrame(moveRaf);
+    if (syncRaf) cancelAnimationFrame(syncRaf);
     map.getCanvas().style.cursor = "";
   };
 }
