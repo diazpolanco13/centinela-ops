@@ -6,6 +6,7 @@ const CLAVE_VISTA = "centinela-ops-vista-mapa";
 const CLAVE_BASE = "centinela-ops-base-mapa";
 const CLAVE_MODO_3D = "centinela-ops-modo-3d";
 const CLAVE_MODO_GLOBO = "centinela-ops-modo-globo";
+const CLAVE_LOCALES_OSM = "centinela-ops-overlay-locales";
 
 export interface VistaMapa {
   center: [number, number];
@@ -101,6 +102,25 @@ export function cargarModoGlobo(): boolean | null {
 export function guardarModoGlobo(activo: boolean): void {
   try {
     localStorage.setItem(CLAVE_MODO_GLOBO, activo ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+
+export function cargarOverlayLocales(): boolean | null {
+  try {
+    const v = localStorage.getItem(CLAVE_LOCALES_OSM);
+    if (v === "1") return true;
+    if (v === "0") return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function guardarOverlayLocales(activo: boolean): void {
+  try {
+    localStorage.setItem(CLAVE_LOCALES_OSM, activo ? "1" : "0");
   } catch {
     /* ignore */
   }

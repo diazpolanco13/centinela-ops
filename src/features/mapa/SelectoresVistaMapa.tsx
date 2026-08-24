@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Box, Layers2, Map as MapIcon, Satellite } from "lucide-react";
+import { Box, Layers2, Map as MapIcon, Satellite, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup, ButtonGroupSeparator } from "@/components/ui/button-group";
 import {
@@ -13,8 +13,10 @@ import { cn } from "@/lib/utils";
 interface Props {
   baseMapa: BaseMapa;
   modo3d: boolean;
+  locales: boolean;
   onCambiarBase: (base: BaseMapa) => void;
   onCambiarModo3d: (activo: boolean) => void;
+  onCambiarLocales: (activo: boolean) => void;
   /** Ancho de barra + etiqueta de la regla de escala (cambia con el zoom). */
   reglaEscala?: ReglaEscala;
   className?: string;
@@ -27,8 +29,10 @@ interface Props {
 export function SelectoresVistaMapa({
   baseMapa,
   modo3d,
+  locales,
   onCambiarBase,
   onCambiarModo3d,
+  onCambiarLocales,
   reglaEscala,
   className,
 }: Props) {
@@ -117,6 +121,21 @@ export function SelectoresVistaMapa({
             <span className="hidden sm:inline">SAT</span>
           </BotonSegmento>
         </ButtonGroup>
+
+        <ButtonGroup
+          orientation="horizontal"
+          className="pointer-events-auto overflow-hidden rounded-xl border border-border bg-card/90 shadow-lg backdrop-blur-xl"
+        >
+          <BotonSegmento
+            activo={locales}
+            acento="sky"
+            etiqueta="Locales OSM (OpenFreeMap)"
+            onClick={() => onCambiarLocales(!locales)}
+          >
+            <Store className="size-3.5" />
+            <span className="hidden sm:inline">Locales</span>
+          </BotonSegmento>
+        </ButtonGroup>
       </div>
 
       <ReglaEscalaMapa regla={reglaEscala} />
@@ -157,7 +176,7 @@ function BotonSegmento({
   children,
 }: {
   activo: boolean;
-  acento: "primary" | "secondary" | "emerald";
+  acento: "primary" | "secondary" | "emerald" | "sky";
   etiqueta: string;
   onClick: () => void;
   children: ReactNode;
@@ -167,7 +186,9 @@ function BotonSegmento({
       ? "bg-primary/15 text-primary"
       : acento === "emerald"
         ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-        : "bg-amber-500/15 text-amber-700 dark:text-amber-400";
+        : acento === "sky"
+          ? "bg-sky-500/15 text-sky-600 dark:text-sky-400"
+          : "bg-amber-500/15 text-amber-700 dark:text-amber-400";
 
   return (
     <Button

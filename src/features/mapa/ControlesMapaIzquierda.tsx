@@ -55,7 +55,7 @@ export function ControlesMapaIzquierda({
               variant="outline"
               size="icon"
               aria-pressed={busquedaAbierta}
-              aria-label={busquedaAbierta ? "Cerrar búsqueda" : "Buscar vehículo"}
+              aria-label={busquedaAbierta ? "Cerrar búsqueda de vehículos" : "Buscar vehículo"}
               onClick={onToggleBusqueda}
               className={cn(
                 "h-10 w-10 border-0 shadow-none",
@@ -65,7 +65,7 @@ export function ControlesMapaIzquierda({
               <Search className="size-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="right">Buscar</TooltipContent>
+          <TooltipContent side="right">Buscar vehículo</TooltipContent>
         </Tooltip>
       </ButtonGroup>
 

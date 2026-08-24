@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
-import { Globe, Home, LocateFixed, Radio, X } from "lucide-react";
+import { Globe, Home, LocateFixed, Radio, Search, X } from "lucide-react";
 import { CARACAS_CENTRO } from "@/data/geo";
 import { UNIDADES_MOCK, type UnidadEnMapa } from "@/data/unidadesMock";
 import { usePosicionesTraccar } from "@/data/usePosicionesTraccar";
@@ -9,10 +9,12 @@ import {
   cargarBaseMapa,
   cargarModo3d,
   cargarModoGlobo,
+  cargarOverlayLocales,
   cargarVistaMapa,
   guardarBaseMapa,
   guardarModo3d,
   guardarModoGlobo,
+  guardarOverlayLocales,
   guardarVistaMapa,
   VISTA_DEFECTO,
 } from "@/data/preferenciasMapa";
@@ -40,6 +42,9 @@ import {
   siguienteFallbackSinCarto,
   textoErrorMapa,
 } from "@/map/disponibilidadCarto";
+import { aplicarPois } from "@/map/capaPois";
+import { restaurarPinBusqueda, mostrarPinBusqueda } from "@/map/capaBusquedaLugar";
+import type { LugarEncontrado } from "@/data/buscarLugares";
 import { MenuCapasMapa } from "@/map/MenuCapasMapa";
 import {
   ANCHO_INTRO_DESTINO_METROS,
@@ -54,6 +59,7 @@ import {
 import { AvisoFallbackBaseMapa, type InfoFallbackBaseMapa } from "@/features/mapa/AvisoFallbackBaseMapa";
 import { ControlesMapaIzquierda } from "@/features/mapa/ControlesMapaIzquierda";
 import { FichaVehiculo } from "@/features/mapa/FichaVehiculo";
+import { BuscadorLugares } from "@/features/mapa/BuscadorLugares";
 import { PanelEstela } from "@/features/mapa/PanelEstela";
 import { SelectoresVistaMapa } from "@/features/mapa/SelectoresVistaMapa";
 import {
@@ -99,6 +105,9 @@ export function MapaOperativo() {
   const [modo3d, setModo3d] = useState(() => cargarModo3d() ?? true);
   const modo3dPrevioRef = useRef(modo3d);
   const [modoGlobo, setModoGlobo] = useState(() => cargarModoGlobo() ?? false);
+  const [locales, setLocales] = useState(() => cargarOverlayLocales() ?? true);
+  const localesRef = useRef(locales);
+  const pinBusquedaRef = useRef<LugarEncontrado | null>(null);
   const [reglaEscala, setReglaEscala] = useState<ReglaEscala | undefined>();
   const [fallback, setFallback] = useState<InfoFallbackBaseMapa | null>(null);
   const [gpsActivo, setGpsActivo] = useState(false);
@@ -108,6 +117,7 @@ export function MapaOperativo() {
   const [ventanaMin, setVentanaMin] = useState<VentanaEstelaMin>(VENTANA_ESTELA_DEFECTO_MIN);
   const [panelVehiculosAbierto, setPanelVehiculosAbierto] = useState(true);
   const [busquedaAbierta, setBusquedaAbierta] = useState(false);
+  const [busquedaLugaresAbierta, setBusquedaLugaresAbierta] = useState(false);
   const prefsUnidades = usePrefsUnidades();
 
   ventanaMinRef.current = ventanaMin;
@@ -137,6 +147,7 @@ export function MapaOperativo() {
   baseEfectivaRef.current = fallback?.usada ?? baseMapa;
   modo3dRef.current = modo3d;
   modoGloboRef.current = modoGlobo;
+  localesRef.current = locales;
 
   function persistirVista() {
     const map = mapRef.current;
@@ -178,6 +189,11 @@ export function MapaOperativo() {
     reinyectarEstela(map);
   }
 
+  function aplicarOverlayPois(map: maplibregl.Map) {
+    aplicarPois(map, localesRef.current);
+    restaurarPinBusqueda(map, pinBusquedaRef.current);
+  }
+
   async function cargarEstelaDeUnidad(
     id: string,
     ventana: VentanaEstelaMin,
@@ -207,18 +223,25 @@ export function MapaOperativo() {
     }
   }
 
-  function volarAUnidad(lngLat: [number, number]) {
+  function volarAUnidad(lngLat: [number, number], zoomMin = 16) {
     const map = mapRef.current;
     if (!map || !listoRef.current || introEnCursoRef.current) return;
     if (!Number.isFinite(lngLat[0]) || !Number.isFinite(lngLat[1])) return;
     const left = anchoOverlayIzquierdo(map.getContainer());
     map.flyTo({
       center: lngLat,
-      zoom: Math.max(map.getZoom(), 16),
+      zoom: Math.max(map.getZoom(), zoomMin),
       duration: 900,
       essential: true,
       offset: [left / 2, 0],
     });
+  }
+
+  function elegirLugar(lugar: LugarEncontrado) {
+    pinBusquedaRef.current = lugar;
+    const map = mapRef.current;
+    if (map && listoRef.current) mostrarPinBusqueda(map, lugar);
+    volarAUnidad(lugar.lngLat, 17);
   }
 
   function aplicarSeleccion(id: string | null, opts?: { fitEstela?: boolean }) {
@@ -271,6 +294,7 @@ export function MapaOperativo() {
         aplicarEdificios3d(map, con3d, { animar: animarToggle3d });
         sincronizarPitch3d(map, con3d);
         aplicarProyeccionGlobo(map, modoGloboRef.current);
+        aplicarOverlayPois(map);
         aplicarCapaUnidades(map);
         return;
       }
@@ -282,6 +306,7 @@ export function MapaOperativo() {
         aplicarEdificios3d(mapRef.current, modo3dRef.current);
         sincronizarPitch3d(mapRef.current, modo3dRef.current);
         aplicarProyeccionGlobo(mapRef.current, modoGloboRef.current);
+        aplicarOverlayPois(mapRef.current);
         aplicarCapaUnidades(mapRef.current);
       });
       return;
@@ -299,6 +324,7 @@ export function MapaOperativo() {
           mapRef.current.easeTo({ pitch: 0, bearing: 0, duration: 600 });
         }
         aplicarProyeccionGlobo(mapRef.current, modoGloboRef.current);
+        aplicarOverlayPois(mapRef.current);
         aplicarCapaUnidades(mapRef.current);
       });
       return;
@@ -306,6 +332,7 @@ export function MapaOperativo() {
 
     aplicarVisibilidadRaster(map, base);
     aplicarProyeccionGlobo(map, modoGloboRef.current);
+    aplicarOverlayPois(map);
   }
 
   function programarIntroFly(map: maplibregl.Map): () => void {
@@ -468,6 +495,12 @@ export function MapaOperativo() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modoGlobo]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !listoRef.current) return;
+    aplicarPois(map, locales);
+  }, [locales]);
+
   function cambiarBase(base: BaseMapa) {
     setFallback(null);
     setBaseMapa(base);
@@ -477,6 +510,11 @@ export function MapaOperativo() {
   function cambiar3d(activo: boolean) {
     setModo3d(activo);
     guardarModo3d(activo);
+  }
+
+  function cambiarLocales(activo: boolean) {
+    setLocales(activo);
+    guardarOverlayLocales(activo);
   }
 
   function toggleGlobo() {
@@ -581,13 +619,47 @@ export function MapaOperativo() {
       <SelectoresVistaMapa
         baseMapa={baseEfectivaRef.current}
         modo3d={modo3d}
+        locales={locales}
         onCambiarBase={cambiarBase}
         onCambiarModo3d={cambiar3d}
+        onCambiarLocales={cambiarLocales}
         reglaEscala={reglaEscala}
       />
-      <div className="map-controls-overlay pointer-events-none absolute right-3 top-3 z-40">
+      <div className="map-controls-overlay pointer-events-none absolute right-3 top-3 z-40 flex items-start gap-2">
+        {busquedaLugaresAbierta ? (
+          <BuscadorLugares
+            onElegirLugar={elegirLugar}
+            onCerrar={() => setBusquedaLugaresAbierta(false)}
+          />
+        ) : null}
         <ButtonGroup orientation="vertical" className="pointer-events-auto overflow-hidden rounded-xl border border-border bg-card shadow-lg">
-          <MenuCapasMapa baseMapa={baseEfectivaRef.current} onCambiarBase={cambiarBase} className="border-0 shadow-none" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className={cn(
+                  "h-10 w-10 border-0 shadow-none",
+                  busquedaLugaresAbierta && "bg-primary/15 text-primary",
+                )}
+                onClick={() => setBusquedaLugaresAbierta((v) => !v)}
+                aria-label="Buscar lugar"
+                aria-pressed={busquedaLugaresAbierta}
+              >
+                <Search className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">Buscar lugar</TooltipContent>
+          </Tooltip>
+          <MenuCapasMapa
+            baseMapa={baseEfectivaRef.current}
+            onCambiarBase={cambiarBase}
+            locales={locales}
+            onCambiarLocales={cambiarLocales}
+            size="default"
+            className="h-10 w-10 border-0 shadow-none p-0"
+          />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
