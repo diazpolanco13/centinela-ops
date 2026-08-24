@@ -1,4 +1,5 @@
 import {
+  Box3,
   CanvasTexture,
   CircleGeometry,
   Color,
@@ -14,7 +15,7 @@ import {
   type Object3D,
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { leerPrefsUnidades, type EstiloMarcaEstado } from "@/data/preferenciasUnidades";
+import { COLOR_VEHICULO_DEFECTO, leerPrefsUnidades, type EstiloMarcaEstado } from "@/data/preferenciasUnidades";
 
 /** Fallback FBX→m si no hay nodo `Sketchfab_model`. */
 export const ESCALA_SKETCHFAB = 0.0008886755094863474;
@@ -32,9 +33,16 @@ export const YAW_PROTOTIPO = Math.PI;
 export const ALTURA_MARCA_M = 0.02;
 
 export const URL_MODELO_AUTOS = "/models/autos.glb";
+export const URL_MODELO_TODOTERRENO = "/models/suv-todoterreno.glb";
 
-export const TIPOS_AUTO = ["sedan", "suv", "pickup", "minivan", "hatchback"] as const;
+/** Largo objetivo (m) para GLB suelto Y-up. Mismo valor que capaUnidades3d. */
+const LARGO_MODELO_M = 4.8;
+
+export const TIPOS_AUTO = ["sedan", "suv", "pickup", "minivan", "hatchback", "todoterreno"] as const;
 export type TipoAuto = (typeof TIPOS_AUTO)[number];
+
+/** Hash de silueta `auto`: pack genérico, no el GLB táctico. */
+const TIPOS_AUTO_HASH = ["sedan", "suv", "pickup", "minivan", "hatchback"] as const;
 
 /** Tipos extra del pack; se arman por si el hash los usa. */
 export type TipoAutoPack =
@@ -102,7 +110,7 @@ export function tipoDeUnidad(id: string): TipoAuto {
     h ^= id.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  return TIPOS_AUTO[(h >>> 0) % TIPOS_AUTO.length] ?? "sedan";
+  return TIPOS_AUTO_HASH[(h >>> 0) % TIPOS_AUTO_HASH.length] ?? "sedan";
 }
 
 let texAura: CanvasTexture | null = null;
@@ -267,6 +275,55 @@ function armarPrototipos(raiz: Object3D): Map<TipoAutoPack, Group> {
   return out;
 }
 
+/**
+ * GLB suelto (glTF Y-up, p. ej. Tripo). Pack FBX es Z-up + nariz −Y.
+ * Bake en hijo: `inst.matrix` pisa el root cada frame.
+ * Rz(+π/2) no −π/2: frente Tripo queda alineado con rumbo GPS (si no, marcha atrás).
+ */
+function prototipoDesdeGltfYup(raiz: Object3D, tipo: TipoAutoPack): Group {
+  const proto = new Group();
+  proto.name = tipo;
+
+  const inner = raiz.clone(true);
+  const rx = new Matrix4().makeRotationX(Math.PI / 2);
+  const rz = new Matrix4().makeRotationZ(Math.PI / 2);
+  inner.applyMatrix4(rz.multiply(rx));
+  inner.updateWorldMatrix(true, true);
+
+  const size = new Vector3();
+  const centro = new Vector3();
+  const box = new Box3().setFromObject(inner);
+  box.getSize(size);
+  const largo = Math.max(size.x, size.y);
+  const escala = LARGO_MODELO_M / Math.max(largo, 1e-6);
+  inner.scale.multiplyScalar(escala);
+  inner.updateWorldMatrix(true, true);
+
+  const box2 = new Box3().setFromObject(inner);
+  box2.getCenter(centro);
+  inner.position.x -= centro.x;
+  inner.position.y -= centro.y;
+  inner.position.z -= box2.min.z;
+
+  inner.traverse((obj) => {
+    if (!esMesh(obj)) return;
+    const marcar = (m: Material): void => {
+      m.name = "Body";
+      m.userData.conservarMapa = true;
+    };
+    if (Array.isArray(obj.material)) obj.material.forEach(marcar);
+    else marcar(obj.material);
+  });
+
+  proto.add(inner);
+  proto.add(grupoMarcaEstado());
+  proto.frustumCulled = false;
+  proto.traverse((obj) => {
+    obj.frustumCulled = false;
+  });
+  return proto;
+}
+
 let cache: Map<TipoAutoPack, Group> | null = null;
 let carga: Promise<Map<TipoAutoPack, Group>> | null = null;
 
@@ -274,25 +331,43 @@ export function cargarPrototiposAutos(): Promise<Map<TipoAutoPack, Group>> {
   if (cache && cache.size > 0) return Promise.resolve(cache);
   cache = null;
   carga ??= (async () => {
-    try {
-      const gltf = await new GLTFLoader().loadAsync(URL_MODELO_AUTOS);
-      const armados = armarPrototipos(gltf.scene);
-      if (armados.size === 0) {
+    const loader = new GLTFLoader();
+    const armados = new Map<TipoAutoPack, Group>();
+
+    const packP = loader.loadAsync(URL_MODELO_AUTOS).then((gltf) => {
+      const pack = armarPrototipos(gltf.scene);
+      if (pack.size === 0) {
         const nombres: string[] = [];
         gltf.scene.traverse((o) => {
           if (o.name) nombres.push(o.name);
         });
         console.error("autos.glb: 0 prototipos. nodos:", nombres.slice(0, 80).join(" | "));
-        carga = null;
-        return armados;
       }
-      cache = armados;
-      return armados;
-    } catch (err) {
-      console.error("autos.glb no cargó", err);
-      carga = null;
-      return new Map();
+      return pack;
+    });
+
+    const todoP = loader.loadAsync(URL_MODELO_TODOTERRENO).then((gltf) =>
+      prototipoDesdeGltfYup(gltf.scene, "todoterreno"),
+    );
+
+    const [packR, todoR] = await Promise.allSettled([packP, todoP]);
+    if (packR.status === "fulfilled") {
+      for (const [k, v] of packR.value) armados.set(k, v);
+    } else {
+      console.error("autos.glb no cargó", packR.reason);
     }
+    if (todoR.status === "fulfilled") {
+      armados.set("todoterreno", todoR.value);
+    } else {
+      console.error("suv-todoterreno.glb no cargó", todoR.reason);
+    }
+
+    if (armados.size === 0) {
+      carga = null;
+      return armados;
+    }
+    cache = armados;
+    return armados;
   })();
   return carga;
 }
@@ -321,6 +396,11 @@ function aplicarColorCarroceria(mat: Material, hex: string): void {
   if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
   if (mat instanceof MeshStandardMaterial) {
     mat.color.set(hex);
+    if (mat.userData.conservarMapa) {
+      mat.color.set(hex.toLowerCase() === COLOR_VEHICULO_DEFECTO ? "#ffffff" : hex);
+      mat.needsUpdate = true;
+      return;
+    }
     if (mat.map) mat.map = null;
     mat.metalness = Math.min(mat.metalness, 0.18);
     mat.roughness = Math.max(mat.roughness, 0.5);
@@ -349,7 +429,7 @@ export function clonarUnidad(proto: Group, colorVehiculo: string): Group {
   const paint: Material[] = [];
   inst.traverse((obj) => {
     if (!esMesh(obj)) return;
-    if (esMeshMarca(obj)) {
+    if (obj.name.startsWith("marca-")) {
       const src = obj.material;
       if (Array.isArray(src)) {
         obj.material = src.map((m) => {

@@ -3,7 +3,7 @@ import { COLOR_ESTADO, type EstadoUnidad } from "@/data/unidadesMock";
 
 const CLAVE = "centinela-ops-prefs-unidades";
 
-const TIPOS_SILUETA = ["sedan", "suv", "pickup", "minivan", "hatchback"] as const;
+const TIPOS_SILUETA = ["sedan", "suv", "pickup", "minivan", "hatchback", "todoterreno"] as const;
 export type SiluetaPrefs = "auto" | (typeof TIPOS_SILUETA)[number];
 
 export const ESTILOS_MARCA_ESTADO = ["aura", "disco", "anillo"] as const;

@@ -72,12 +72,18 @@ const ESTILOS_MARCA: { value: EstiloMarcaEstado; label: string; hint: string }[]
   { value: "anillo", label: "Anillo", hint: "Aro en el suelo" },
 ];
 
+const LABEL_SILUETA: Record<Exclude<SiluetaPrefs, "auto">, string> = {
+  sedan: "Sedán",
+  suv: "SUV",
+  pickup: "Pickup",
+  minivan: "Minivan",
+  hatchback: "Hatchback",
+  todoterreno: "Todoterreno",
+};
+
 const SILUETAS: { value: SiluetaPrefs; label: string }[] = [
   { value: "auto", label: "Automático" },
-  ...TIPOS_AUTO.map((t) => ({
-    value: t as SiluetaPrefs,
-    label: t === "sedan" ? "Sedán" : t === "suv" ? "SUV" : t === "pickup" ? "Pickup" : t === "minivan" ? "Minivan" : "Hatchback",
-  })),
+  ...TIPOS_AUTO.map((t) => ({ value: t as SiluetaPrefs, label: LABEL_SILUETA[t] })),
 ];
 
 function fmt(n: number, digitos = 1): string {
