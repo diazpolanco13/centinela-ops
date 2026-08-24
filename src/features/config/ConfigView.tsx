@@ -148,7 +148,9 @@ export function ConfigView() {
             <Card>
               <CardHeader>
                 <CardTitle>Vista del mapa</CardTitle>
-                <CardDescription>Base, 2D/3D y proyección. Antes estaban en el HUD del mapa.</CardDescription>
+                <CardDescription>
+                  Capa base, 2D/3D y globo. Reemplaza el botón de capas del mapa.
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <FieldGroup className="gap-6">

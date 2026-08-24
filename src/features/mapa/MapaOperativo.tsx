@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
-import { Globe, Home, LocateFixed, Radio, Settings, X } from "lucide-react";
+import { Home, LocateFixed, Radio, Settings, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { CARACAS_CENTRO } from "@/data/geo";
 import { UNIDADES_MOCK, type UnidadEnMapa } from "@/data/unidadesMock";
@@ -13,7 +13,6 @@ import {
   cargarVistaMapa,
   guardarBaseMapa,
   guardarModo3d,
-  guardarModoGlobo,
   guardarVistaMapa,
   usePrefsAgrupamiento,
   VISTA_DEFECTO,
@@ -42,7 +41,6 @@ import {
   siguienteFallbackSinCarto,
   textoErrorMapa,
 } from "@/map/disponibilidadCarto";
-import { MenuCapasMapa } from "@/map/MenuCapasMapa";
 import {
   ANCHO_INTRO_DESTINO_METROS,
   DURACION_INTRO_MAPA_MS,
@@ -100,7 +98,7 @@ export function MapaOperativo() {
   const [baseMapa, setBaseMapa] = useState<BaseMapa>(() => cargarBaseMapa() ?? BASE_MAPA_DEFECTO);
   const [modo3d, setModo3d] = useState(() => cargarModo3d() ?? true);
   const modo3dPrevioRef = useRef(modo3d);
-  const [modoGlobo, setModoGlobo] = useState(() => cargarModoGlobo() ?? false);
+  const [modoGlobo] = useState(() => cargarModoGlobo() ?? false);
   const [reglaEscala, setReglaEscala] = useState<ReglaEscala | undefined>();
   const [fallback, setFallback] = useState<InfoFallbackBaseMapa | null>(null);
   const [gpsActivo, setGpsActivo] = useState(false);
@@ -482,12 +480,6 @@ export function MapaOperativo() {
     guardarModo3d(activo);
   }
 
-  function toggleGlobo() {
-    const next = !modoGlobo;
-    setModoGlobo(next);
-    guardarModoGlobo(next);
-  }
-
   function centrarCaracas() {
     const map = mapRef.current;
     if (!map) return;
@@ -590,25 +582,6 @@ export function MapaOperativo() {
       />
       <div className="map-controls-overlay pointer-events-none absolute right-3 top-3 z-40">
         <ButtonGroup orientation="vertical" className="pointer-events-auto overflow-hidden rounded-xl border border-border bg-card shadow-lg">
-          <MenuCapasMapa baseMapa={baseEfectivaRef.current} onCambiarBase={cambiarBase} className="border-0 shadow-none" />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className={cn(
-                  "h-10 w-10 border-0 shadow-none",
-                  modoGlobo && "bg-primary/15 text-primary",
-                )}
-                onClick={toggleGlobo}
-                aria-label="Proyección globo"
-              >
-                <Globe className="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="left">Globo</TooltipContent>
-          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button asChild variant="outline" size="icon" className="h-10 w-10 border-0 shadow-none">
