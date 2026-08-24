@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { CARACAS_CENTRO, CARACAS_ZOOM } from "@/data/geo";
 import type { BaseMapa } from "@/map/estiloMapa";
 import { CLAVES_BASE_MAPA } from "@/map/estiloMapa";
@@ -7,6 +8,7 @@ const CLAVE_BASE = "centinela-ops-base-mapa";
 const CLAVE_MODO_3D = "centinela-ops-modo-3d";
 const CLAVE_MODO_GLOBO = "centinela-ops-modo-globo";
 const CLAVE_LOCALES_OSM = "centinela-ops-overlay-locales";
+const CLAVE_AGRUPAMIENTO = "centinela-ops-agrupamiento-mapa";
 
 export interface VistaMapa {
   center: [number, number];
@@ -124,4 +126,109 @@ export function guardarOverlayLocales(activo: boolean): void {
   } catch {
     /* ignore */
   }
+}
+
+export function restablecerPrefsVistaMapa(): void {
+  try {
+    localStorage.removeItem(CLAVE_BASE);
+    localStorage.removeItem(CLAVE_MODO_3D);
+    localStorage.removeItem(CLAVE_MODO_GLOBO);
+    localStorage.removeItem(CLAVE_LOCALES_OSM);
+  } catch {
+    /* ignore */
+  }
+}
+
+export type PrefsAgrupamiento = {
+  clustering: boolean;
+  /** Radio de agrupación en px de pantalla. */
+  clusterRadius: number;
+  /** Zoom máximo donde aún se agrupa. Más cerca = autos sueltos. */
+  clusterMaxZoom: number;
+};
+
+export const PREFS_AGRUPAMIENTO_DEFECTO: PrefsAgrupamiento = {
+  clustering: true,
+  clusterRadius: 50,
+  clusterMaxZoom: 14,
+};
+
+export const RANGO_AGRUPAMIENTO = {
+  clusterRadius: { min: 30, max: 90 },
+  clusterMaxZoom: { min: 10, max: 16 },
+} as const;
+
+const listenersAgrup = new Set<() => void>();
+let estadoAgrup: PrefsAgrupamiento = cargarAgrupamiento();
+
+function emitirAgrup(): void {
+  for (const l of listenersAgrup) l();
+}
+
+function clamp(n: number, min: number, max: number): number {
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
+}
+
+function normalizarAgrupamiento(raw: Partial<PrefsAgrupamiento> | null | undefined): PrefsAgrupamiento {
+  const base = PREFS_AGRUPAMIENTO_DEFECTO;
+  return {
+    clustering: typeof raw?.clustering === "boolean" ? raw.clustering : base.clustering,
+    clusterRadius: clamp(
+      typeof raw?.clusterRadius === "number" ? raw.clusterRadius : base.clusterRadius,
+      RANGO_AGRUPAMIENTO.clusterRadius.min,
+      RANGO_AGRUPAMIENTO.clusterRadius.max,
+    ),
+    clusterMaxZoom: clamp(
+      typeof raw?.clusterMaxZoom === "number" ? raw.clusterMaxZoom : base.clusterMaxZoom,
+      RANGO_AGRUPAMIENTO.clusterMaxZoom.min,
+      RANGO_AGRUPAMIENTO.clusterMaxZoom.max,
+    ),
+  };
+}
+
+function cargarAgrupamiento(): PrefsAgrupamiento {
+  try {
+    const raw = localStorage.getItem(CLAVE_AGRUPAMIENTO);
+    if (!raw) return { ...PREFS_AGRUPAMIENTO_DEFECTO };
+    return normalizarAgrupamiento(JSON.parse(raw) as Partial<PrefsAgrupamiento>);
+  } catch {
+    return { ...PREFS_AGRUPAMIENTO_DEFECTO };
+  }
+}
+
+function persistirAgrupamiento(prefs: PrefsAgrupamiento): void {
+  try {
+    localStorage.setItem(CLAVE_AGRUPAMIENTO, JSON.stringify(prefs));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Lectura síncrona para capas MapLibre (sin React). */
+export function leerPrefsAgrupamiento(): PrefsAgrupamiento {
+  return estadoAgrup;
+}
+
+export function guardarPrefsAgrupamiento(parcial: Partial<PrefsAgrupamiento>): void {
+  estadoAgrup = normalizarAgrupamiento({ ...estadoAgrup, ...parcial });
+  persistirAgrupamiento(estadoAgrup);
+  emitirAgrup();
+}
+
+export function restablecerPrefsAgrupamiento(): void {
+  estadoAgrup = { ...PREFS_AGRUPAMIENTO_DEFECTO };
+  persistirAgrupamiento(estadoAgrup);
+  emitirAgrup();
+}
+
+export function usePrefsAgrupamiento(): PrefsAgrupamiento {
+  return useSyncExternalStore(
+    (cb) => {
+      listenersAgrup.add(cb);
+      return () => listenersAgrup.delete(cb);
+    },
+    () => estadoAgrup,
+    () => PREFS_AGRUPAMIENTO_DEFECTO,
+  );
 }

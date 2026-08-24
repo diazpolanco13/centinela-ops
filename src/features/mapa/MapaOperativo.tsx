@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
-import { Globe, Home, LocateFixed, Radio, Search, X } from "lucide-react";
+import { Globe, Home, LocateFixed, Radio, Search, Settings, X } from "lucide-react";
+import { Link } from "react-router-dom";
 import { CARACAS_CENTRO } from "@/data/geo";
 import { UNIDADES_MOCK, type UnidadEnMapa } from "@/data/unidadesMock";
 import { usePosicionesTraccar } from "@/data/usePosicionesTraccar";
@@ -16,6 +17,7 @@ import {
   guardarModoGlobo,
   guardarOverlayLocales,
   guardarVistaMapa,
+  usePrefsAgrupamiento,
   VISTA_DEFECTO,
 } from "@/data/preferenciasMapa";
 import { usePrefsUnidades } from "@/data/preferenciasUnidades";
@@ -119,6 +121,7 @@ export function MapaOperativo() {
   const [busquedaAbierta, setBusquedaAbierta] = useState(false);
   const [busquedaLugaresAbierta, setBusquedaLugaresAbierta] = useState(false);
   const prefsUnidades = usePrefsUnidades();
+  const prefsAgrupamiento = usePrefsAgrupamiento();
 
   ventanaMinRef.current = ventanaMin;
 
@@ -138,7 +141,7 @@ export function MapaOperativo() {
     const map = mapRef.current;
     if (!map || !listoRef.current) return;
     aplicarPrefsUnidades(map, unidadesRef.current, selectedIdRef.current);
-  }, [prefsUnidades]);
+  }, [prefsUnidades, prefsAgrupamiento]);
 
   useEffect(() => {
     setOcultarAvisoTraccar(false);
@@ -677,6 +680,16 @@ export function MapaOperativo() {
               </Button>
             </TooltipTrigger>
             <TooltipContent side="left">Globo</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button asChild variant="outline" size="icon" className="h-10 w-10 border-0 shadow-none">
+                <Link to="/configuracion" aria-label="Ajustes de visualización">
+                  <Settings className="size-4" />
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">Visualización</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
